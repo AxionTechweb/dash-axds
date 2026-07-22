@@ -1,23 +1,359 @@
-import { Megaphone } from "lucide-react";
+import { Info, TriangleAlert } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 
-import { PagePlaceholder } from "@/components/panel/page-placeholder";
+import { Card } from "@/components/ui/card";
+import { getActiveArea } from "@/lib/areas";
+import { getFunnelBase, getLastClickByAd } from "@/lib/attribution";
+import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
+import { getAccountOptions, getMetaEntities, type MetaLevel } from "@/lib/meta/campaigns";
+import { resolvePeriod } from "@/lib/period";
+import { DEFAULT_SETTINGS, getSettings } from "@/lib/settings";
+import { cn } from "@/lib/utils";
+
+import { CampaignFilters } from "./campaign-filters";
+import { CampaignsTable, type TableRow } from "./campaigns-table";
 
 export const metadata: Metadata = { title: "Campanhas" };
 
-export default function CampanhasPage() {
+const LEVELS: { key: MetaLevel; label: string }[] = [
+  { key: "campaign", label: "Campanhas" },
+  { key: "adset", label: "Conjuntos" },
+  { key: "ad", label: "Anúncios" },
+];
+
+type SearchParams = {
+  period?: string;
+  from?: string;
+  to?: string;
+  level?: string;
+  attr?: string;
+  account?: string;
+  q?: string;
+  status?: string;
+};
+
+function buildHref(params: SearchParams, patch: Record<string, string>) {
+  const search = new URLSearchParams();
+  for (const [k, v] of Object.entries({ ...params, ...patch })) {
+    if (v) search.set(k, String(v));
+  }
+  return `/campanhas?${search.toString()}`;
+}
+
+export default async function CampanhasPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const params = await searchParams;
+  const period = resolvePeriod(params);
+
+  const level = (LEVELS.find((l) => l.key === params.level)?.key ??
+    "campaign") as MetaLevel;
+  const attribution = params.attr === "meta" ? "meta" : "lastclick";
+
+  const activeArea = await getActiveArea();
+  if (!activeArea) {
+    return (
+      <Card className="p-6">
+        <p className="text-sm text-muted-foreground">
+          Crie uma área para ver as campanhas.
+        </p>
+      </Card>
+    );
+  }
+
+  const settings = await getSettings(activeArea.id);
+  const currency = settings?.currency ?? DEFAULT_SETTINGS.currency;
+  const taxRate = Number(settings?.tax_rate ?? DEFAULT_SETTINGS.tax_rate);
+
+  const [meta, lastClick, accounts, funnelBase] = await Promise.all([
+    getMetaEntities(
+      activeArea.id,
+      level,
+      period.from,
+      period.to,
+      params.account,
+    ),
+    getLastClickByAd(activeArea.id, period.from, period.to),
+    getAccountOptions(activeArea.id),
+    getFunnelBase(activeArea.id, period.from, period.to),
+  ]);
+
+  // Monta as linhas conforme o MODO DE ATRIBUIÇÃO (nunca somando os dois).
+  let rows: TableRow[] = meta.rows.map((entity) => {
+    const own = entity.adIds.reduce(
+      (acc, adId) => {
+        const row = lastClick.get(adId);
+        if (row) {
+          acc.sales += row.sales;
+          acc.revenue += row.revenue;
+          acc.checkouts += row.checkouts;
+        }
+        return acc;
+      },
+      { sales: 0, revenue: 0, checkouts: 0 },
+    );
+
+    const sales =
+      attribution === "meta" ? entity.metaPurchases : own.sales;
+    const revenue =
+      attribution === "meta" ? entity.metaRevenue : own.revenue;
+
+    const tax = revenue * (taxRate / 100);
+    const profit = revenue - entity.spend - tax;
+
+    return {
+      id: entity.id,
+      name: entity.name,
+      level: entity.level,
+      status: entity.status,
+      effectiveStatus: entity.effectiveStatus,
+      budgetAmount: entity.budgetAmount,
+      budgetType: entity.budgetType,
+      accountId: entity.accountId,
+      accountLabel: entity.accountLabel,
+      spend: entity.spend,
+      impressions: entity.impressions,
+      clicks: entity.clicks,
+      sales,
+      revenue,
+      // Checkouts vêm SEMPRE dos eventos próprios (a Meta não os reporta assim).
+      checkouts: own.checkouts,
+      profit,
+      roas: entity.spend > 0 ? revenue / entity.spend : 0,
+      cpa: sales > 0 ? entity.spend / sales : 0,
+      cpm:
+        entity.impressions > 0
+          ? (entity.spend / entity.impressions) * 1000
+          : 0,
+      ctr:
+        entity.impressions > 0 ? (entity.clicks / entity.impressions) * 100 : 0,
+      cpc: entity.clicks > 0 ? entity.spend / entity.clicks : 0,
+    };
+  });
+
+  // Filtros de busca e status (aplicados no servidor).
+  if (params.q) {
+    const needle = params.q.toLowerCase();
+    rows = rows.filter((r) => r.name.toLowerCase().includes(needle));
+  }
+  if (params.status === "active") {
+    rows = rows.filter((r) => r.status.toUpperCase() === "ACTIVE");
+  } else if (params.status === "paused") {
+    rows = rows.filter((r) => r.status.toUpperCase() !== "ACTIVE");
+  }
+
+  // Top 5 anúncios por faturamento Last Click (independe do modo da tabela).
+  const topAds = [...lastClick.entries()]
+    .map(([adId, row]) => ({ adId, ...row }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 5);
+
+  const adNames = new Map(
+    meta.rows
+      .filter((r) => r.level === "ad")
+      .map((r) => [r.id, r.name] as const),
+  );
+
+  const totalClicks = meta.rows.reduce((sum, r) => sum + r.clicks, 0);
+  const totalSales = rows.reduce((sum, r) => sum + r.sales, 0);
+
   return (
-    <PagePlaceholder
-      title="Campanhas"
-      description="Leitura da Meta Ads e edição inline de status e orçamento."
-      phase="Fase 6"
-      icon={Megaphone}
-      items={[
-        "Tabs Campanhas / Conjuntos / Anúncios com as mesmas colunas agregadas",
-        "Toggle de atribuição: Last Click × Vendas na Meta (nunca somados)",
-        "Edição inline de status e orçamento, com confirmação e log de auditoria",
-        "Top 5 Anúncios e Funil de Conversão híbrido",
-      ]}
-    />
+    <div className="space-y-4">
+      {/* Tabs de nível + toggle de atribuição */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <nav className="flex gap-1 rounded-lg border border-border bg-[hsl(var(--muted)/0.4)] p-1">
+          {LEVELS.map((item) => (
+            <Link
+              key={item.key}
+              href={buildHref(params, { level: item.key })}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm transition-colors",
+                level === item.key
+                  ? "bg-[hsl(var(--primary)/0.15)] font-medium text-primary"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className="flex items-center gap-2">
+          <div
+            className="group relative"
+            title="Last Click: vendas dos seus webhooks casadas por ad_id. Vendas na Meta: o que o gerenciador reporta pelo modelo de atribuição dele. Os dois NUNCA são somados."
+          >
+            <Info className="size-4 text-muted-foreground" />
+          </div>
+          <nav className="flex gap-1 rounded-lg border border-border bg-[hsl(var(--muted)/0.4)] p-1">
+            <Link
+              href={buildHref(params, { attr: "lastclick" })}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs transition-colors",
+                attribution === "lastclick"
+                  ? "bg-[hsl(var(--primary)/0.15)] font-medium text-primary"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Atribuição Last Click
+            </Link>
+            <Link
+              href={buildHref(params, { attr: "meta" })}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs transition-colors",
+                attribution === "meta"
+                  ? "bg-[hsl(var(--primary)/0.15)] font-medium text-primary"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Vendas na Meta
+            </Link>
+          </nav>
+        </div>
+      </div>
+
+      <CampaignFilters accounts={accounts} />
+
+      {!meta.configured ? (
+        <Card className="flex items-start gap-3 p-4">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber" />
+          <p className="text-sm text-muted-foreground">
+            Nenhuma conta de anúncio da Meta conectada nesta área. Conecte em{" "}
+            <strong>Integrações</strong> para ver campanhas.
+          </p>
+        </Card>
+      ) : null}
+
+      {meta.errors.length > 0 ? (
+        <Card className="flex items-start gap-3 p-4">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <div className="min-w-0 text-sm">
+            <p className="font-medium">Falha ao ler a Meta</p>
+            <ul className="mt-1 space-y-0.5 font-mono text-xs text-muted-foreground">
+              {meta.errors.map((err) => (
+                <li key={err} className="truncate">
+                  {err}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CampaignsTable
+          rows={rows}
+          currency={currency}
+          canEdit={meta.configured}
+        />
+      </Card>
+
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <Card>
+          <div className="border-b border-border p-4">
+            <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+              Top 5 Anúncios (Last Click)
+            </span>
+          </div>
+          {topAds.length === 0 ? (
+            <p className="p-6 text-center text-sm text-muted-foreground">
+              Sem vendas atribuídas a anúncios no período.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {topAds.map((ad) => (
+                <li
+                  key={ad.adId}
+                  className="flex items-center justify-between gap-3 px-4 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {adNames.get(ad.adId) ?? `Anúncio ${ad.adId}`}
+                    </p>
+                    <p className="font-mono text-[0.65rem] text-muted-foreground">
+                      {ad.adId} · {formatNumber(ad.sales)} vendas
+                    </p>
+                  </div>
+                  <span className="sensitive shrink-0 font-mono text-sm font-semibold text-primary tabular">
+                    {formatCurrency(ad.revenue, currency)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
+          <div className="border-b border-border p-4">
+            <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+              Funil de Conversão
+            </span>
+          </div>
+          <FunnelStep
+            label="Cliques (Meta)"
+            value={totalClicks}
+            previous={null}
+          />
+          <FunnelStep
+            label="Views (page_view)"
+            value={funnelBase.views}
+            previous={totalClicks}
+          />
+          <FunnelStep
+            label="Checkouts"
+            value={funnelBase.checkouts}
+            previous={funnelBase.views}
+          />
+          <FunnelStep
+            label="Vendas"
+            value={totalSales}
+            previous={funnelBase.checkouts}
+          />
+          <div className="px-4 py-3 text-xs text-muted-foreground">
+            Taxa total (clique → venda):{" "}
+            <span className="font-mono tabular">
+              {totalClicks > 0
+                ? formatPercent((totalSales / totalClicks) * 100, 2)
+                : "—"}
+            </span>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function FunnelStep({
+  label,
+  value,
+  previous,
+}: {
+  label: string;
+  value: number;
+  previous: number | null;
+}) {
+  const rate = previous && previous > 0 ? (value / previous) * 100 : null;
+  const width = previous && previous > 0 ? Math.min((value / previous) * 100, 100) : 100;
+
+  return (
+    <div className="border-b border-border px-4 py-3">
+      <div className="flex items-baseline justify-between gap-3 text-sm">
+        <span>{label}</span>
+        <span className="font-mono tabular">
+          {formatNumber(value)}
+          {rate !== null ? (
+            <span className="ml-2 text-xs text-muted-foreground">
+              {formatPercent(rate, 1)}
+            </span>
+          ) : null}
+        </span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="fill-neon h-full rounded-full" style={{ width: `${width}%` }} />
+      </div>
+    </div>
   );
 }

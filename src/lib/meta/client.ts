@@ -42,20 +42,25 @@ export type MetaResult = {
   errors: string[];
 };
 
-type AdAccount = { id: string; label: string; ad_account_id: string; ads_token: string | null };
+export type AdAccount = {
+  id: string;
+  label: string;
+  ad_account_id: string;
+  ads_token: string | null;
+};
 
-function toYmd(date: Date): string {
+export function toYmd(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
 /** Normaliza "123" ou "act_123" para "act_123". */
-function normalizeAccountId(value: string): string {
+export function normalizeAccountId(value: string): string {
   const trimmed = value.trim();
   return trimmed.startsWith("act_") ? trimmed : `act_${trimmed}`;
 }
 
 /** Períodos que tocam os últimos dias mudam (atribuição retroativa da Meta). */
-function cacheSecondsFor(until: Date): number {
+export function cacheSecondsFor(until: Date): number {
   const daysAgo = (Date.now() - until.getTime()) / 86_400_000;
   return daysAgo > META_CACHE.recentWindowDays
     ? META_CACHE.historicalSeconds
@@ -63,7 +68,7 @@ function cacheSecondsFor(until: Date): number {
 }
 
 /** Soma um tipo de action do payload de insights. */
-function sumActions(list: unknown, type: string): number {
+export function sumActions(list: unknown, type: string): number {
   if (!Array.isArray(list)) return 0;
   return list.reduce<number>((total, item) => {
     if (
@@ -78,8 +83,8 @@ function sumActions(list: unknown, type: string): number {
   }, 0);
 }
 
-/** Contas de anúncio da área, com o ads_token já decifrado. */
-async function getAdAccounts(areaId: string): Promise<AdAccount[]> {
+/** Contas de anúncio da área, com o ads_token já decifrado. SOMENTE no servidor. */
+export async function getAdAccounts(areaId: string): Promise<AdAccount[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("meta_ad_accounts")
