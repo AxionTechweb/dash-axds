@@ -1,5 +1,7 @@
 import "server-only";
 
+import { z } from "zod";
+
 import { decryptSecret } from "@/lib/crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -72,6 +74,29 @@ export type PurchaseInput = {
   adId: string | null;
   raw: unknown;
 };
+
+/** Limites defensivos do que efetivamente é gravado em `purchases`. */
+const PurchaseInputSchema = z.object({
+  areaId: z.uuid(),
+  transactionId: z.string().min(1).max(120),
+  plataforma: z.enum(["hotmart", "kiwify"]),
+  status: z.enum([
+    "approved",
+    "pending",
+    "refunded",
+    "chargeback",
+    "canceled",
+  ]),
+  userId: z.string().max(64).nullable(),
+  email: z.string().max(320).nullable(),
+  telefone: z.string().max(32).nullable(),
+  produto: z.string().max(255).nullable(),
+  // Valores absurdos/NaN não entram (protege as métricas do painel).
+  valor: z.number().finite().min(0).max(10_000_000).nullable(),
+  moeda: z.string().max(8).nullable(),
+  adId: z.string().regex(/^\d{5,25}$/).nullable(),
+  raw: z.unknown(),
+});
 
 type VisitorRow = {
   user_id: string;
@@ -153,29 +178,40 @@ async function matchVisitor(
  * visitante casado. Compras sem ad_id contam como orgânico/direto — nunca somem.
  */
 export async function savePurchase(input: PurchaseInput): Promise<void> {
+  // Validação (zod) dos campos JÁ EXTRAÍDOS. Impor schema ao payload bruto seria
+  // frágil — cada plataforma muda o formato entre versões —, então validamos o
+  // que de fato vai para o banco: tamanhos, tipos e faixas.
+  const parsed = PurchaseInputSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error(
+      `Payload de compra inválido: ${parsed.error.issues[0]?.path.join(".")} — ${parsed.error.issues[0]?.message}`,
+    );
+  }
+  const clean = parsed.data;
+
   const admin = createAdminClient();
 
   const { visitor, match } = await matchVisitor(
-    input.areaId,
-    input.userId,
-    input.email,
-    input.telefone,
+    clean.areaId,
+    clean.userId,
+    clean.email,
+    clean.telefone,
   );
 
-  const adId = input.adId ?? validAdId(visitor?.utm_content ?? null);
+  const adId = clean.adId ?? validAdId(visitor?.utm_content ?? null);
 
   const { error } = await admin.from("purchases").upsert(
     {
-      area_id: input.areaId,
-      transaction_id: input.transactionId,
-      user_id: input.userId ?? visitor?.user_id ?? null,
-      email: input.email,
-      telefone: input.telefone,
-      produto: input.produto,
-      valor: input.valor,
-      moeda: input.moeda,
-      status: input.status,
-      plataforma: input.plataforma,
+      area_id: clean.areaId,
+      transaction_id: clean.transactionId,
+      user_id: clean.userId ?? visitor?.user_id ?? null,
+      email: clean.email,
+      telefone: clean.telefone,
+      produto: clean.produto,
+      valor: clean.valor,
+      moeda: clean.moeda,
+      status: clean.status,
+      plataforma: clean.plataforma,
       utm_source: visitor?.utm_source ?? null,
       utm_medium: visitor?.utm_medium ?? null,
       utm_campaign: visitor?.utm_campaign ?? null,
@@ -186,7 +222,7 @@ export async function savePurchase(input: PurchaseInput): Promise<void> {
       geo_region: visitor?.geo_region ?? null,
       geo_city: visitor?.geo_city ?? null,
       match,
-      raw_webhook: input.raw as Record<string, unknown>,
+      raw_webhook: clean.raw as Record<string, unknown>,
     },
     { onConflict: "transaction_id" },
   );

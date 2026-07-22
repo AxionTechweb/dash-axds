@@ -218,7 +218,7 @@ próxima. Plano completo: `~/.claude/plans/concurrent-riding-sedgewick.md`.
       `Intl.DisplayNames`, sem tabela hardcoded). O choropleth continua fora —
       ver a nota da Fase 5.
 - [x] **Fase 8** — Empacotamento white label (branding, onboarding, docs).
-- [ ] **Fase 9** — Auditoria de segurança + deploy.
+- [x] **Fase 9** — Auditoria de segurança + deploy.
 
 ## Comandos úteis
 

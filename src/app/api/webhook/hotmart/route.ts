@@ -108,7 +108,14 @@ export async function POST(request: Request) {
       raw: payload,
     });
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error("[webhook/hotmart] falha ao gravar compra:", err);
+
+    // Payload inválido é erro PERMANENTE: responder 2xx evita reenvio infinito
+    // pela plataforma. Falha de infraestrutura devolve 500 para haver retry.
+    if (message.startsWith("Payload de compra inválido")) {
+      return json({ ok: true, ignored: "invalid_payload" }, 200);
+    }
     return json({ error: "storage_error" }, 500);
   }
 
