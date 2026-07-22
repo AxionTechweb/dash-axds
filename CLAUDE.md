@@ -113,7 +113,18 @@ Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta
 **Status interno de compra** (unificado): `approved`, `pending`, `refunded`, `chargeback`,
 `canceled`. **Plataforma**: `hotmart`, `kiwify`.
 
-## Captura (Fase 3)
+## Captura (Fase 3) — OPCIONAL
+
+> **A captura própria não é o caminho padrão.** O modo suportado de origem é: um
+> **código de rastreio externo** (que já roda no site do usuário) leva as UTMs até o
+> link do checkout, e o painel lê tudo do **payload do webhook**. Ver
+> "Atribuição por anúncio" abaixo.
+>
+> O snippet continua no repo como recurso **opcional**, exposto em
+> *Integrações → Captura própria (opcional)*. Ele só acrescenta o que o webhook não tem:
+> `initiate_checkout`, `page_view`, funil e a aba Eventos. **Nada da atribuição por
+> anúncio depende dele.** Sem snippet, `purchases.match` fica `none` — é o esperado,
+> não é falha.
 
 - **Snippet**: `public/track.js`, embutido nas landing pages com o token público da área:
   `<script src="https://SEU-PAINEL/track.js" data-area="TOKEN" defer></script>`.
@@ -136,9 +147,18 @@ Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta
 
 ## Atribuição por anúncio (ad_id) — sempre por ID exato
 
-- Anúncios usam `utm_content={{ad.id}}`. O site propaga o `ad_id` para o checkout:
-  Hotmart via `src`, Kiwify via `utm_content`. Webhooks extraem e gravam em `purchases.ad_id`
-  (**validar formato numérico**). Fallback: `utm_content` do visitor casado por `user_id`.
+- Anúncios usam `utm_content={{ad.id}}`. **Um código de rastreio externo** (fora deste
+  projeto) propaga o `ad_id` para o checkout: Hotmart via `src`, Kiwify via `utm_content`.
+  Webhooks extraem e gravam em `purchases.ad_id` (**validar formato numérico**).
+- **Ordem de precedência do `ad_id`**: campo nativo do webhook (`src`/`utm_content`) →
+  `utm.content` extraída do payload → `utm_content` do visitor casado (só existe com o
+  snippet opcional ligado).
+- **UTMs e GEO vêm do próprio webhook** (`PurchaseInput.utm` / `.geo` em
+  `src/lib/webhooks/common.ts`), com o visitante apenas como fallback. É isso que faz a
+  atribuição funcionar sem nada instalado na landing page. Metadados são **clipados**,
+  nunca rejeitados — descartar uma venda por uma UTM comprida seria pior. País só é
+  aceito em ISO alpha-2 (`normalizeCountry`), para casar com o formato da Vercel e não
+  quebrar o rótulo da tela de regiões.
 - Cruzamento com a Meta **sempre por ID** (nunca por nome). Hierarquia campanha→conjunto→
   anúncio vem da Ads API a partir do `ad_id` (com cache).
 - Vinculação cross-domain: `user_id` viaja na URL do checkout como `sck` (Hotmart) e em

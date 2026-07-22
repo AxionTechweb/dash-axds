@@ -51,6 +51,17 @@ export function validAdId(value: string | null): string | null {
   return /^\d{5,25}$/.test(value) ? value : null;
 }
 
+/**
+ * País só é aceito em ISO alpha-2 — o mesmo formato que a Vercel entrega em
+ * `x-vercel-ip-country`. Guardar "Brasil"/"Brazil" misturado com "BR" quebraria
+ * o agrupamento e o rótulo da tela de regiões, então preferimos gravar nulo.
+ */
+export function normalizeCountry(value: string | null): string | null {
+  if (!value) return null;
+  const code = value.trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(code) ? code : null;
+}
+
 /** Comparação em tempo constante (tokens e assinaturas). */
 export function safeEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a);

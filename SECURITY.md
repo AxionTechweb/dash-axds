@@ -25,10 +25,13 @@ Auditoria da Fase 9. Use esta página antes de publicar cada instância.
 - [ ] `/setup` já se desativou (acesse e confirme a mensagem "Setup já concluído").
 - [ ] Token da Meta é de **System User** com `ads_read` + `ads_management`
       (o botão "Testar conexão" valida isso).
-- [ ] Origens permitidas (CORS) cadastradas por área.
-- [ ] URLs de webhook cadastradas na Hotmart e na Kiwify, com hottok/token salvos.
+- [ ] URL de webhook cadastrada no checkout que você usa (Hotmart e/ou Kiwify),
+      com hottok/token salvos no painel.
 - [ ] `utm_content={{ad.id}}` configurado nos anúncios.
-- [ ] Snippet instalado nas landing pages.
+- [ ] Código de rastreio externo levando o `ad_id` ao checkout (`src` na Hotmart,
+      `utm_content` na Kiwify) — **confirmado com uma venda real**.
+- [ ] *(Só se usar a captura própria)* Snippet instalado e origens permitidas (CORS)
+      cadastradas por área.
 
 ---
 
@@ -76,9 +79,13 @@ Para captura, perder dado é pior que aceitar um excesso momentâneo.
 
 ## Pontos em aberto (confirmar com dados reais)
 
+**Em qual caminho do payload o `ad_id` chega.** Sem captura própria, o webhook é a
+única fonte de atribuição. O parser tenta vários caminhos candidatos e o `raw_webhook`
+fica salvo — dá para conferir e ajustar depois da primeira venda, sem perder dado.
+
 Não foi possível validar contra as docs oficiais (páginas renderizadas por JS):
 
-1. **Kiwify `sck` vs `s1`** — lemos os dois; o snippet envia os dois.
+1. **Kiwify `sck` vs `s1`** — lemos os dois.
 2. **Kiwify em centavos** — `charge_amount` inteiro é dividido por 100.
    **É o de maior impacto**: se estiver errado, os valores saem 100× errados.
 3. **Algoritmo do HMAC da Kiwify** — aceitamos sha1 e sha256 (ambos exigem o segredo).

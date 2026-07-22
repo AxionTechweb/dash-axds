@@ -9,7 +9,14 @@ import { validAdId } from "./parse";
 import type { PurchaseStatus } from "./status";
 
 // Helpers puros de parsing vivem em ./parse (testáveis fora do Next).
-export { firstNumber, firstString, get, safeEqual, validAdId } from "./parse";
+export {
+  firstNumber,
+  firstString,
+  get,
+  normalizeCountry,
+  safeEqual,
+  validAdId,
+} from "./parse";
 
 /* ------------------------------------------------------------------- área */
 
@@ -60,6 +67,22 @@ export async function resolveWebhookArea(
 
 /* --------------------------------------------------------------- gravação */
 
+/** UTMs que a própria plataforma devolve nos parâmetros de rastreio. */
+export type PurchaseUtm = {
+  source: string | null;
+  medium: string | null;
+  campaign: string | null;
+  term: string | null;
+  content: string | null;
+};
+
+/** Localização do comprador, quando a plataforma envia o endereço. */
+export type PurchaseGeo = {
+  country: string | null;
+  region: string | null;
+  city: string | null;
+};
+
 export type PurchaseInput = {
   areaId: string;
   transactionId: string;
@@ -72,8 +95,16 @@ export type PurchaseInput = {
   valor: number | null;
   moeda: string | null;
   adId: string | null;
+  /**
+   * Rastreio vindo do CHECKOUT. É a fonte principal quando não há captura
+   * própria na landing page (um código externo empurra as UTMs para o checkout).
+   */
+  utm?: PurchaseUtm;
+  geo?: PurchaseGeo;
   raw: unknown;
 };
+
+const FreeText = z.string().nullable().optional();
 
 /** Limites defensivos do que efetivamente é gravado em `purchases`. */
 const PurchaseInputSchema = z.object({
@@ -95,8 +126,30 @@ const PurchaseInputSchema = z.object({
   valor: z.number().finite().min(0).max(10_000_000).nullable(),
   moeda: z.string().max(8).nullable(),
   adId: z.string().regex(/^\d{5,25}$/).nullable(),
+  // UTM/GEO são metadados: entram como texto livre e são CLIPADOS mais abaixo
+  // em vez de rejeitados. Descartar uma venda por causa de uma UTM comprida
+  // seria pior do que gravá-la truncada.
+  utm: z
+    .object({
+      source: FreeText,
+      medium: FreeText,
+      campaign: FreeText,
+      term: FreeText,
+      content: FreeText,
+    })
+    .optional(),
+  geo: z
+    .object({ country: FreeText, region: FreeText, city: FreeText })
+    .optional(),
   raw: z.unknown(),
 });
+
+/** Corta o texto no limite da coluna em vez de rejeitar a gravação. */
+function clip(value: string | null | undefined, max: number): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, max) : null;
+}
 
 type VisitorRow = {
   user_id: string;
@@ -198,7 +251,17 @@ export async function savePurchase(input: PurchaseInput): Promise<void> {
     clean.telefone,
   );
 
-  const adId = clean.adId ?? validAdId(visitor?.utm_content ?? null);
+  // Ordem de precedência: o que o CHECKOUT devolveu vale mais que o que
+  // ficou salvo no visitante — o webhook descreve a venda que aconteceu,
+  // o visitante é só a última visita conhecida. Sem captura própria na
+  // landing page, `visitor` é null e tudo vem daqui.
+  const utm = clean.utm;
+  const geo = clean.geo;
+
+  const adId =
+    clean.adId ??
+    validAdId(clip(utm?.content, 512)) ??
+    validAdId(visitor?.utm_content ?? null);
 
   const { error } = await admin.from("purchases").upsert(
     {
@@ -212,15 +275,15 @@ export async function savePurchase(input: PurchaseInput): Promise<void> {
       moeda: clean.moeda,
       status: clean.status,
       plataforma: clean.plataforma,
-      utm_source: visitor?.utm_source ?? null,
-      utm_medium: visitor?.utm_medium ?? null,
-      utm_campaign: visitor?.utm_campaign ?? null,
-      utm_term: visitor?.utm_term ?? null,
-      utm_content: visitor?.utm_content ?? null,
+      utm_source: clip(utm?.source, 255) ?? visitor?.utm_source ?? null,
+      utm_medium: clip(utm?.medium, 255) ?? visitor?.utm_medium ?? null,
+      utm_campaign: clip(utm?.campaign, 255) ?? visitor?.utm_campaign ?? null,
+      utm_term: clip(utm?.term, 255) ?? visitor?.utm_term ?? null,
+      utm_content: clip(utm?.content, 512) ?? visitor?.utm_content ?? null,
       ad_id: adId,
-      geo_country: visitor?.geo_country ?? null,
-      geo_region: visitor?.geo_region ?? null,
-      geo_city: visitor?.geo_city ?? null,
+      geo_country: clip(geo?.country, 2) ?? visitor?.geo_country ?? null,
+      geo_region: clip(geo?.region, 64) ?? visitor?.geo_region ?? null,
+      geo_city: clip(geo?.city, 120) ?? visitor?.geo_city ?? null,
       match,
       raw_webhook: clean.raw as Record<string, unknown>,
     },

@@ -75,14 +75,35 @@ export default async function IntegracoesPage() {
   const publicToken = (areaRow?.public_token as string) ?? "";
   const origins = (settings?.allowed_origins as string[]) ?? [];
 
+  const hotmartOn = Boolean(settings?.hotmart_hottok);
+  const kiwifyOn = Boolean(settings?.kiwify_webhook_token);
+
+  // Cada instância usa um checkout só (ou os dois). Enquanto nenhum estiver
+  // configurado, cobramos os dois; assim que um entra, o outro vira opcional.
+  const anyCheckout = hotmartOn || kiwifyOn;
+
   const checklist = [
     {
       label: "Conta de anúncio da Meta conectada",
       done: accounts.some((a) => a.hasToken),
     },
-    { label: "Origens permitidas (CORS) cadastradas", done: origins.length > 0 },
-    { label: "Webhook da Hotmart configurado", done: Boolean(settings?.hotmart_hottok) },
-    { label: "Webhook da Kiwify configurado", done: Boolean(settings?.kiwify_webhook_token) },
+    {
+      label: "Webhook da Hotmart configurado",
+      done: hotmartOn,
+      optional: anyCheckout && !hotmartOn,
+    },
+    {
+      label: "Webhook da Kiwify configurado",
+      done: kiwifyOn,
+      optional: anyCheckout && !kiwifyOn,
+    },
+    {
+      label: "Origens permitidas (CORS) cadastradas",
+      done: origins.length > 0,
+      // Só importa para quem usa a captura própria (snippet). Com as UTMs
+      // chegando pelo checkout, o painel funciona sem nenhuma origem.
+      optional: true,
+    },
   ];
 
   const snippet = `<script src="${baseUrl}/track.js" data-area="${publicToken}" defer></script>`;
@@ -113,12 +134,17 @@ export default async function IntegracoesPage() {
               <span className={cn(item.done && "text-muted-foreground")}>
                 {item.label}
               </span>
+              {!item.done && item.optional ? (
+                <span className="text-[0.68rem] text-muted-foreground">
+                  opcional
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>
       </Card>
 
-      {/* Snippet + URLs de webhook */}
+      {/* URLs de webhook + como o ad_id chega ao checkout */}
       <Card>
         <div className="border-b border-border p-4">
           <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -126,7 +152,6 @@ export default async function IntegracoesPage() {
           </span>
         </div>
         <div className="space-y-4 p-4">
-          <CopyBox label="Snippet das landing pages" value={snippet} />
           <CopyBox
             label="URL do webhook — Hotmart"
             value={`${baseUrl}/api/webhook/hotmart?a=${publicToken}`}
@@ -135,10 +160,60 @@ export default async function IntegracoesPage() {
             label="URL do webhook — Kiwify"
             value={`${baseUrl}/api/webhook/kiwify?a=${publicToken}`}
           />
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+              Como a atribuição chega até aqui
+            </p>
+            <ol className="ml-4 list-decimal space-y-1 text-[0.72rem] text-muted-foreground">
+              <li>
+                Nos anúncios da Meta, use{" "}
+                <code className="font-mono text-foreground">
+                  utm_content=&#123;&#123;ad.id&#125;&#125;
+                </code>{" "}
+                na URL.
+              </li>
+              <li>
+                O código de rastreio do seu site propaga esse valor para o link
+                do checkout: <code className="font-mono text-foreground">src</code>{" "}
+                na Hotmart,{" "}
+                <code className="font-mono text-foreground">utm_content</code> na
+                Kiwify.
+              </li>
+              <li>
+                O webhook devolve o parâmetro e o painel grava em{" "}
+                <code className="font-mono text-foreground">ad_id</code>. O
+                cruzamento com a Meta é sempre por ID exato.
+              </li>
+            </ol>
+            <p className="mt-2 text-[0.7rem] text-muted-foreground">
+              O <code className="font-mono">ad_id</code> só é aceito se for
+              numérico. Se o checkout não devolver o parâmetro, a venda ainda é
+              gravada — apenas sem anúncio atribuído.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      {/* Captura própria — opcional */}
+      <Card>
+        <div className="border-b border-border p-4">
+          <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+            Captura própria (opcional)
+          </span>
+        </div>
+        <div className="space-y-3 p-4">
+          <p className="text-[0.72rem] text-muted-foreground">
+            Só se você quiser que <strong>este painel</strong> também rastreie as
+            visitas. Habilita checkouts iniciados, funil e regiões por visitante.
+            Se as UTMs já chegam ao checkout por um código externo, você{" "}
+            <strong>não precisa disto</strong> — a atribuição por anúncio
+            funciona sem.
+          </p>
+          <CopyBox label="Snippet das landing pages" value={snippet} />
           <p className="text-[0.7rem] text-muted-foreground">
-            Nos anúncios da Meta, use{" "}
-            <code className="font-mono">utm_content=&#123;&#123;ad.id&#125;&#125;</code>{" "}
-            para que a atribuição por anúncio funcione.
+            Usando o snippet, cadastre também os domínios em{" "}
+            <strong>Origens permitidas</strong> logo abaixo — sem eles a captura
+            é bloqueada de propósito.
           </p>
         </div>
       </Card>

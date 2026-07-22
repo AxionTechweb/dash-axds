@@ -5,6 +5,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import {
   firstNumber,
   firstString,
+  normalizeCountry,
   resolveWebhookArea,
   safeEqual,
   savePurchase,
@@ -44,6 +45,20 @@ function signatureMatches(rawBody: string, secret: string, provided: string) {
 function normalizeAmount(value: number | null): number | null {
   if (value === null) return null;
   return Number.isInteger(value) ? value / 100 : value;
+}
+
+/** A Kiwify varia a caixa do objeto de rastreio entre versões do payload. */
+const TRACKING_ROOTS = [
+  "TrackingParameters",
+  "trackingParameters",
+  "tracking_parameters",
+];
+
+/** Monta os caminhos candidatos de um campo de rastreio, em todas as caixas. */
+function tracking(...fields: string[]): string[] {
+  return fields.flatMap((field) =>
+    TRACKING_ROOTS.map((root) => `${root}.${field}`),
+  );
 }
 
 export async function POST(request: Request) {
@@ -100,23 +115,45 @@ export async function POST(request: Request) {
   );
 
   // Rastreio: user_id em sck (ou s1) e ad_id em utm_content.
-  const userId = firstString(payload, [
-    "TrackingParameters.sck",
-    "TrackingParameters.s1",
-    "trackingParameters.sck",
-    "trackingParameters.s1",
-    "tracking_parameters.sck",
-    "tracking_parameters.s1",
-  ]);
+  const userId = firstString(payload, tracking("sck", "s1"));
 
-  const adId = validAdId(
-    firstString(payload, [
-      "TrackingParameters.utm_content",
-      "trackingParameters.utm_content",
-      "tracking_parameters.utm_content",
-      "TrackingParameters.src",
+  const adId = validAdId(firstString(payload, tracking("utm_content", "src")));
+
+  /**
+   * UTMs devolvidas pela própria Kiwify. É a ÚNICA fonte de origem quando não
+   * há captura própria na landing page — nesse cenário quem empurra os
+   * parâmetros para o checkout é um código externo.
+   */
+  const utm = {
+    source: firstString(payload, tracking("utm_source")),
+    medium: firstString(payload, tracking("utm_medium")),
+    campaign: firstString(payload, tracking("utm_campaign")),
+    term: firstString(payload, tracking("utm_term")),
+    content: firstString(payload, tracking("utm_content", "src")),
+  };
+
+  // GEO do endereço do comprador. Sem captura própria, é o que alimenta a
+  // tela de regiões. Só aceitamos país em ISO alpha-2 (ver normalizeCountry).
+  const geo = {
+    country: normalizeCountry(
+      firstString(payload, [
+        "Customer.country",
+        "customer.country",
+        "Customer.country_code",
+        "Customer.address.country",
+      ]),
+    ),
+    region: firstString(payload, [
+      "Customer.state",
+      "customer.state",
+      "Customer.address.state",
     ]),
-  );
+    city: firstString(payload, [
+      "Customer.city",
+      "customer.city",
+      "Customer.address.city",
+    ]),
+  };
 
   try {
     await savePurchase({
@@ -150,6 +187,8 @@ export async function POST(request: Request) {
           "currency",
         ]) ?? "BRL",
       adId,
+      utm,
+      geo,
       raw: payload,
     });
   } catch (err) {

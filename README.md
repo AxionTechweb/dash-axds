@@ -14,10 +14,11 @@ instância independente. Zero credencial, ID, domínio ou marca fixos no código
 
 ## O que ele faz
 
-- **Captura própria**: snippet leve nas landing pages gera um `user_id` anônimo, guarda
-  UTMs e dispara `page_view` / `initiate_checkout`.
 - **Atribuição por anúncio**: cruzamento sempre por `ad.id` exato (nunca por nome de
-  campanha), com `utm_content={{ad.id}}` nos anúncios.
+  campanha), com `utm_content={{ad.id}}` nos anúncios. O `ad_id` chega ao painel pelo
+  **payload do webhook** — nada precisa ser instalado nas landing pages.
+- **Captura própria (opcional)**: snippet leve que gera um `user_id` anônimo, guarda
+  UTMs e dispara `page_view` / `initiate_checkout`. Só acrescenta funil e eventos.
 - **Webhooks de compra**: Hotmart e Kiwify, validados pelo mecanismo nativo de cada uma.
 - **Dashboard**: faturamento, gasto, lucro, ROAS, CPA, evolução, regiões e vendas em
   tempo real.
@@ -110,31 +111,45 @@ O token é **cifrado** antes de ir para o banco e nunca é exibido de volta.
 
 #### Webhooks
 
-Copie as URLs prontas em Integrações e cadastre em cada plataforma:
+Escolha o checkout que você usa. Copie a URL pronta em Integrações e cadastre na
+plataforma:
 
 - **Hotmart**: Ferramentas → Webhook. Cole a URL e depois salve o **hottok** da sua
   conta no painel.
 - **Kiwify**: Apps → Webhooks. Cole a URL, escolha os eventos e salve o **token de
   assinatura** no painel.
 
-#### Origens permitidas (CORS)
+É pelo payload desse webhook que o painel lê o `ad_id`, as UTMs e o endereço do
+comprador. Não é preciso configurar mais nada do lado do site.
 
-Em Integrações → Preferências, cadastre os domínios das suas landing pages (um por
-linha; aceita `*.seudominio.com`).
+### 7. Configurar os anúncios e o caminho do `ad_id`
 
-> **Sem nenhuma origem cadastrada, a captura é bloqueada** para requisições de
-> navegador. É proposital — evita que qualquer site envie dados para a sua instância.
+Nos anúncios da Meta, use **`utm_content={{ad.id}}`** na URL.
 
-### 7. Instalar o snippet e configurar os anúncios
+O seu código de rastreio precisa levar esse valor até o link do checkout:
 
-Copie o snippet em Integrações e cole antes de `</body>` nas landing pages:
+| Plataforma | Parâmetro no link do checkout |
+|---|---|
+| Hotmart | `src=<ad_id>` |
+| Kiwify | `utm_content=<ad_id>` |
+
+O `ad_id` só é aceito se for **numérico**. Venda sem `ad_id` continua sendo gravada —
+entra como orgânico/direto.
+
+### 8. Captura própria (opcional)
+
+Só se você quiser que **este painel** também rastreie as visitas — habilita checkouts
+iniciados, funil e a aba Eventos. A atribuição por anúncio funciona sem isso.
 
 ```html
 <script src="https://SEU-DOMINIO/track.js" data-area="TOKEN_DA_AREA" defer></script>
 ```
 
-Nos anúncios da Meta, use **`utm_content={{ad.id}}`** na URL — é isso que permite a
-atribuição por anúncio.
+Usando o snippet, cadastre em Integrações → Preferências os domínios das suas landing
+pages (um por linha; aceita `*.seudominio.com`).
+
+> **Sem nenhuma origem cadastrada, a captura é bloqueada** para requisições de
+> navegador. É proposital — evita que qualquer site envie dados para a sua instância.
 
 ---
 

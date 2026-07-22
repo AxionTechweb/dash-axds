@@ -3,6 +3,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import {
   firstNumber,
   firstString,
+  normalizeCountry,
   resolveWebhookArea,
   safeEqual,
   savePurchase,
@@ -81,6 +82,56 @@ export async function POST(request: Request) {
     ]),
   );
 
+  /**
+   * UTMs devolvidas pela própria Hotmart. É a ÚNICA fonte de origem quando não
+   * há captura própria na landing page — nesse cenário quem empurra os
+   * parâmetros para o checkout é um código externo. Os caminhos são tentados em
+   * ordem porque a Hotmart varia entre `origin` e `tracking` conforme a versão.
+   */
+  const utm = {
+    source: firstString(payload, [
+      "data.purchase.origin.utm_source",
+      "data.purchase.tracking.utm_source",
+      "data.purchase.tracking.source",
+    ]),
+    medium: firstString(payload, [
+      "data.purchase.origin.utm_medium",
+      "data.purchase.tracking.utm_medium",
+    ]),
+    campaign: firstString(payload, [
+      "data.purchase.origin.utm_campaign",
+      "data.purchase.tracking.utm_campaign",
+    ]),
+    term: firstString(payload, [
+      "data.purchase.origin.utm_term",
+      "data.purchase.tracking.utm_term",
+    ]),
+    // `src` é o campo nativo da Hotmart e é onde o ad_id costuma chegar.
+    content: firstString(payload, [
+      "data.purchase.origin.utm_content",
+      "data.purchase.tracking.utm_content",
+      "data.purchase.origin.src",
+      "data.purchase.src",
+    ]),
+  };
+
+  // GEO do endereço do comprador. Sem captura própria, é o que alimenta a
+  // tela de regiões. Só aceitamos país em ISO alpha-2 (ver normalizeCountry).
+  const geo = {
+    country: normalizeCountry(
+      firstString(payload, [
+        "data.buyer.address.country_iso",
+        "data.buyer.address.countryISO",
+        "data.buyer.address.country",
+      ]),
+    ),
+    region: firstString(payload, [
+      "data.buyer.address.state",
+      "data.buyer.address.region",
+    ]),
+    city: firstString(payload, ["data.buyer.address.city"]),
+  };
+
   try {
     await savePurchase({
       areaId: area.areaId,
@@ -105,6 +156,8 @@ export async function POST(request: Request) {
         "data.purchase.full_price.currency_value",
       ]),
       adId,
+      utm,
+      geo,
       raw: payload,
     });
   } catch (err) {
