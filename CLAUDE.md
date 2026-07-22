@@ -217,7 +217,7 @@ próxima. Plano completo: `~/.claude/plans/concurrent-riding-sedgewick.md`.
       *Geo:* entregue como recorte por região (com nomes de país via
       `Intl.DisplayNames`, sem tabela hardcoded). O choropleth continua fora —
       ver a nota da Fase 5.
-- [ ] **Fase 8** — Empacotamento white label (branding, onboarding, docs).
+- [x] **Fase 8** — Empacotamento white label (branding, onboarding, docs).
 - [ ] **Fase 9** — Auditoria de segurança + deploy.
 
 ## Comandos úteis

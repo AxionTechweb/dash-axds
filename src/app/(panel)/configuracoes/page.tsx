@@ -1,16 +1,23 @@
-import { FolderTree, Settings } from "lucide-react";
+import { FolderTree } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 
-import { PagePlaceholder } from "@/components/panel/page-placeholder";
 import { Card } from "@/components/ui/card";
 import { getActiveArea, getAreas } from "@/lib/areas";
+import { getBranding } from "@/lib/branding";
 
 import { AreasManager } from "./areas-manager";
+import { BrandingForm } from "./branding-form";
 
 export const metadata: Metadata = { title: "Configurações" };
+export const dynamic = "force-dynamic";
 
 export default async function ConfiguracoesPage() {
-  const [areas, activeArea] = await Promise.all([getAreas(), getActiveArea()]);
+  const [areas, activeArea, branding] = await Promise.all([
+    getAreas(),
+    getActiveArea(),
+    getBranding(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -36,17 +43,33 @@ export default async function ConfiguracoesPage() {
         </Card>
       </div>
 
-      <PagePlaceholder
-        title="Preferências da área"
-        description="Moeda, alíquota de imposto, meta de faturamento e origens permitidas."
-        phase="Fase 7"
-        icon={Settings}
-        items={[
-          "Moeda e alíquota de imposto (usada no cálculo do lucro)",
-          "Meta de faturamento exibida na barra de progresso do header",
-          "Origens permitidas (CORS) para o snippet das landing pages",
-        ]}
-      />
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Branding</h2>
+          <p className="text-sm text-muted-foreground">
+            Identidade visual da instância (global, não por área). É o que torna
+            este painel white label.
+          </p>
+        </div>
+
+        <Card>
+          <BrandingForm branding={branding} />
+        </Card>
+      </div>
+
+      <Card className="p-4">
+        <p className="text-sm text-muted-foreground">
+          Moeda, alíquota de imposto, meta de faturamento e origens permitidas
+          (CORS) são configuradas por área em{" "}
+          <Link
+            href="/integracoes"
+            className="font-medium text-primary hover:underline"
+          >
+            Integrações
+          </Link>
+          .
+        </p>
+      </Card>
     </div>
   );
 }
