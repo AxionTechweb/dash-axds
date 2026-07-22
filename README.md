@@ -173,4 +173,8 @@ Guardamos em claro apenas o necessário para casar a venda ao visitante (e-mail,
 telefone, nome) e para atribuição/antifraude (IP, user-agent, geo). A exibição na
 interface é sempre **mascarada**. Nenhum dado é enviado a plataformas externas.
 
+**Implantação guiada:** [`docs/PROMPT-IMPLANTACAO.md`](./docs/PROMPT-IMPLANTACAO.md) — prompt
+pronto para colar num agente de código, com os passos manuais marcados.
+
 Detalhes técnicos e regras de arquitetura: [`CLAUDE.md`](./CLAUDE.md).
+Checklist de segurança: [`SECURITY.md`](./SECURITY.md).
