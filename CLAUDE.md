@@ -66,8 +66,8 @@ Um **painel de LEITURA e análise** de tracking e atribuição de anúncios. O s
 
 ### Segredos e criptografia
 - Em **env**, só infra: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-  `SUPABASE_SERVICE_ROLE_KEY`, `ENCRYPTION_KEY`, `SETUP_TOKEN`. Nada sensível com
-  `NEXT_PUBLIC_` além da URL/anon. Ver `.env.example` e `src/lib/env.ts`.
+  `SUPABASE_SERVICE_ROLE_KEY`, `ENCRYPTION_KEY`, `SETUP_TOKEN`, `CRON_SECRET`. Nada
+  sensível com `NEXT_PUBLIC_` além da URL/anon. Ver `.env.example` e `src/lib/env.ts`.
 - Segredos de integração (hottok, token Kiwify, ads_token) são **cifrados** com pgcrypto
   usando `ENCRYPTION_KEY` (que vive **só no env**, nunca no banco). Ciphertext guardado
   como **TEXT base64**. Cifra/decifra via `app_encrypt`/`app_decrypt` (SQL), com EXECUTE
@@ -178,6 +178,16 @@ Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta
 - Falha na Meta **nunca derruba o painel**: retorna zeros + mensagem, e os dados próprios
   continuam sendo exibidos.
 
+## Regras e cron (Fase 7)
+
+- `/api/cron/rules` (de hora em hora) e `/api/cron/cleanup` (diário), agendados em
+  `vercel.json`. Ambos exigem `Authorization: Bearer $CRON_SECRET` comparado em tempo
+  constante e **falham fechados**: sem `CRON_SECRET` no env, a rota devolve 401.
+- O motor (`src/lib/rules/engine.ts`) reaproveita `getMetaEntities` + `getLastClickByAd`,
+  então não gera requisições extras à Meta além do cache normal.
+- Ações **conservadoras**: só `pausar` (e apenas o que está ACTIVE) ou `notificar`.
+  Nunca aumenta orçamento nem ativa nada. Tudo vai para `rule_executions` **e** `audit_log`.
+
 ## Convenções de código
 
 - Next.js App Router + TS, pasta `src/`. Import alias `@/*`. npm (lockfile commitado).
@@ -202,8 +212,11 @@ próxima. Plano completo: `~/.claude/plans/concurrent-riding-sedgewick.md`.
       o GEO da Vercel vem em ISO alpha-2 e o topojson usa ISO numérico; sem a tabela de
       conversão correta o mapa rotularia países errado. Por ora, recorte por região em
       tabela com barras de participação.
-- [ ] **Fase 6** — Campanhas (leitura + edição inline na Meta).
-- [ ] **Fase 7** — Financeiro, Regras, Admin, Geo, Vendas, Integrações.
+- [x] **Fase 6** — Campanhas (leitura + edição inline na Meta).
+- [x] **Fase 7** — Financeiro, Regras, Admin, Geo, Vendas, Integrações.
+      *Geo:* entregue como recorte por região (com nomes de país via
+      `Intl.DisplayNames`, sem tabela hardcoded). O choropleth continua fora —
+      ver a nota da Fase 5.
 - [ ] **Fase 8** — Empacotamento white label (branding, onboarding, docs).
 - [ ] **Fase 9** — Auditoria de segurança + deploy.
 

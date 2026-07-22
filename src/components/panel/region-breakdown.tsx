@@ -2,9 +2,27 @@ import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import type { RegionRow } from "@/lib/metrics";
 
 /**
- * Vendas por Região — recorte a partir do GEO derivado dos headers da Vercel.
- * O mapa (choropleth) entra na página Geo, na Fase 7.
+ * Vendas por Região — recorte a partir do GEO derivado dos headers da Vercel
+ * (país em ISO alpha-2, estado e cidade).
  */
+
+/**
+ * Nome do país a partir do código alpha-2, sem tabela hardcoded.
+ * Intl.DisplayNames é nativo — nada de dependência extra nem lista fixa.
+ */
+const countryNames =
+  typeof Intl !== "undefined" && "DisplayNames" in Intl
+    ? new Intl.DisplayNames(["pt-BR"], { type: "region" })
+    : null;
+
+function countryLabel(code: string | null): string | null {
+  if (!code) return null;
+  try {
+    return countryNames?.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
 export function RegionBreakdown({
   regions,
   currency,
@@ -29,7 +47,9 @@ export function RegionBreakdown({
     <ul className="divide-y divide-border">
       {regions.slice(0, 10).map((row) => {
         const share = (row.sales / totalSales) * 100;
-        const label = [row.region, row.country].filter(Boolean).join(" · ");
+        const label = [row.region, countryLabel(row.country)]
+          .filter(Boolean)
+          .join(" · ");
 
         return (
           <li key={`${row.country}-${row.region}`} className="px-4 py-3">
