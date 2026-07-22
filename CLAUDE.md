@@ -137,7 +137,7 @@ Construção **em fases**. Ao fim de cada fase: **commit** e **aguardar aprovaç
 próxima. Plano completo: `~/.claude/plans/concurrent-riding-sedgewick.md`.
 
 - [x] **Fase 1** — Setup + schema + RLS + criptografia + rate limit.
-- [ ] **Fase 2** — Auth + shell do painel (sidebar, Áreas, tema, /setup).
+- [x] **Fase 2** — Auth + shell do painel (sidebar, Áreas, tema, /setup).
 - [ ] **Fase 3** — Captura (snippet + /api/identify + /api/event).
 - [ ] **Fase 4** — Webhooks Hotmart/Kiwify.
 - [ ] **Fase 5** — Dashboard.
