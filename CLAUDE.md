@@ -102,6 +102,7 @@ Migrations em `supabase/migrations/`:
 - `..120100_tables.sql` — todas as tabelas + índices + triggers.
 - `..120200_rate_limit.sql` — `rate_limit_counters` + `rate_limit_hit` + `rate_limit_cleanup`.
 - `..120300_rls.sql` — RLS em todas as tabelas + policies (SELECT authenticated) + grants.
+- `..(0722)120000_capture.sql` — `areas.public_token` + RPCs `identify_visitor` e `log_event`.
 
 Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta_ad_accounts`
 (N/área), `visitors`, `events_log`, `purchases` (`ad_id` em coluna própria; `transaction_id`
@@ -110,6 +111,27 @@ Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta
 
 **Status interno de compra** (unificado): `approved`, `pending`, `refunded`, `chargeback`,
 `canceled`. **Plataforma**: `hotmart`, `kiwify`.
+
+## Captura (Fase 3)
+
+- **Snippet**: `public/track.js`, embutido nas landing pages com o token público da área:
+  `<script src="https://SEU-PAINEL/track.js" data-area="TOKEN" defer></script>`.
+  Gera/lê o `user_id` (cookie first-party `_tuid` + localStorage), captura UTMs/referrer,
+  chama `/api/identify` e `/api/event`, e **decora** links de checkout e WhatsApp.
+- **`areas.public_token`**: identifica a área nos endpoints públicos. Fica **visível** no
+  fonte da landing page — **não é segredo**. A proteção real é **CORS (`allowed_origins`
+  da área) + rate limit**. Nunca usar esse token para autorizar escrita privilegiada.
+- **Sem preflight**: o snippet envia `Content-Type: text/plain`, o que evita o OPTIONS
+  do CORS. O servidor faz o parse do JSON mesmo assim. `OPTIONS` continua implementado
+  (token via `?a=`) para quem preferir `application/json`.
+- **CORS**: `allowed_origins` **vazio nega tudo** (estado "ainda não configurado") e o erro
+  é explícito no corpo da resposta. Requisição sem header `Origin` (server-to-server) passa,
+  protegida por token + rate limit. Suporta curinga `*.exemplo.com`.
+- **UTMs = last touch**: valor novo sobrescreve, valor nulo **nunca apaga** o anterior
+  (`coalesce` nas RPCs). Assim, navegação interna sem UTM não perde a origem da visita.
+- **IP/user-agent/GEO vêm do SERVIDOR** (headers `x-forwarded-for`, `x-vercel-ip-*`),
+  nunca do que o cliente enviar.
+- Rate limit: `identify` 120/min e `event` 300/min, por área + IP.
 
 ## Atribuição por anúncio (ad_id) — sempre por ID exato
 
@@ -138,7 +160,7 @@ próxima. Plano completo: `~/.claude/plans/concurrent-riding-sedgewick.md`.
 
 - [x] **Fase 1** — Setup + schema + RLS + criptografia + rate limit.
 - [x] **Fase 2** — Auth + shell do painel (sidebar, Áreas, tema, /setup).
-- [ ] **Fase 3** — Captura (snippet + /api/identify + /api/event).
+- [x] **Fase 3** — Captura (snippet + /api/identify + /api/event).
 - [ ] **Fase 4** — Webhooks Hotmart/Kiwify.
 - [ ] **Fase 5** — Dashboard.
 - [ ] **Fase 6** — Campanhas (leitura + edição inline na Meta).

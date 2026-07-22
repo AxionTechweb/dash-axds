@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Assets estáticos servidos ao browser (snippet de captura): JS ES5 por
+    // compatibilidade com landing pages de terceiros, fora do padrão do app.
+    "public/**",
   ]),
 ]);
 
