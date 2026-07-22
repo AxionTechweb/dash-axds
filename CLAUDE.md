@@ -103,6 +103,7 @@ Migrations em `supabase/migrations/`:
 - `..120200_rate_limit.sql` — `rate_limit_counters` + `rate_limit_hit` + `rate_limit_cleanup`.
 - `..120300_rls.sql` — RLS em todas as tabelas + policies (SELECT authenticated) + grants.
 - `..(0722)120000_capture.sql` — `areas.public_token` + RPCs `identify_visitor` e `log_event`.
+- `..(0722)130000_realtime.sql` — publica `purchases` no Realtime (feed do Dashboard).
 
 Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta_ad_accounts`
 (N/área), `visitors`, `events_log`, `purchases` (`ad_id` em coluna própria; `transaction_id`
@@ -143,6 +144,40 @@ Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta
 - Vinculação cross-domain: `user_id` viaja na URL do checkout como `sck` (Hotmart) e em
   links de WhatsApp. No webhook, casar por `user_id`; se faltar, por email/telefone.
 
+## Webhooks de compra (Fase 4)
+
+- Rotas: `/api/webhook/hotmart?a=<public_token>` e `/api/webhook/kiwify?a=<public_token>`.
+- **O token na URL só ROTEIA** para a área. A **autenticação** é sempre pelo mecanismo
+  nativo: `x-hotmart-hottok` (comparado em tempo constante) e **assinatura HMAC** do
+  **corpo bruto** na Kiwify. Por isso a área é resolvida antes da assinatura — é dela que
+  vem o segredo.
+- `ad_id` só é aceito se **numérico** (`^\d{5,25}$`); qualquer outra coisa em `src`/
+  `utm_content` é descartada. Fallback: `utm_content` do visitante casado.
+- **Match** do visitante, nesta ordem: `user_id` (sck) → e-mail → telefone (últimos
+  dígitos). O como fica gravado em `purchases.match` (`user_id`/`email`/`telefone`/`none`).
+- **UPSERT idempotente** por `transaction_id`; `raw_webhook` sempre salvo para auditoria.
+- Status desconhecido vira `pending` — **nunca** descartamos uma venda.
+- Helpers puros de parsing em `src/lib/webhooks/parse.ts` (sem `server-only`, testáveis).
+
+### A CONFIRMAR com webhook real (docs oficiais são renderizadas por JS)
+1. **Kiwify `sck` vs `s1`**: lemos os dois (e o snippet envia os dois). Confirmar e enxugar.
+2. **Kiwify valores em centavos**: `charge_amount` inteiro é dividido por 100. Se vier
+   fracionário, é usado como está. Conferir contra uma venda real.
+3. **Algoritmo do HMAC da Kiwify**: aceitamos sha1 e sha256 (ambos exigem o segredo, então
+   a verificação segue válida). Fixar num só depois de confirmar.
+
+## Meta Ads — leitura de insights (Fase 5)
+
+- `META_API_VERSION` em `src/lib/meta/config.ts` é a **constante única** (hoje `v25.0`).
+- **Rate limit conservador** (20 req/min por conta) usando o mesmo `rate_limit_hit` do
+  Postgres — bem abaixo do limite da Meta, de propósito.
+- **Cache com refetch de períodos recentes**: a atribuição da Meta é **retroativa**, então
+  períodos que tocam os últimos 3 dias revalidam a cada 5 min e períodos fechados a cada
+  24 h (`META_CACHE`).
+- Uma chamada com `time_increment=1` serve ao total **e** à série diária do gráfico.
+- Falha na Meta **nunca derruba o painel**: retorna zeros + mensagem, e os dados próprios
+  continuam sendo exibidos.
+
 ## Convenções de código
 
 - Next.js App Router + TS, pasta `src/`. Import alias `@/*`. npm (lockfile commitado).
@@ -161,8 +196,12 @@ próxima. Plano completo: `~/.claude/plans/concurrent-riding-sedgewick.md`.
 - [x] **Fase 1** — Setup + schema + RLS + criptografia + rate limit.
 - [x] **Fase 2** — Auth + shell do painel (sidebar, Áreas, tema, /setup).
 - [x] **Fase 3** — Captura (snippet + /api/identify + /api/event).
-- [ ] **Fase 4** — Webhooks Hotmart/Kiwify.
-- [ ] **Fase 5** — Dashboard.
+- [x] **Fase 4** — Webhooks Hotmart/Kiwify.
+- [x] **Fase 5** — Dashboard (KPIs, gráfico, regiões, feed em tempo real).
+      *Pendência assumida:* o mapa (choropleth) foi adiado para a Fase 7 (página Geo) —
+      o GEO da Vercel vem em ISO alpha-2 e o topojson usa ISO numérico; sem a tabela de
+      conversão correta o mapa rotularia países errado. Por ora, recorte por região em
+      tabela com barras de participação.
 - [ ] **Fase 6** — Campanhas (leitura + edição inline na Meta).
 - [ ] **Fase 7** — Financeiro, Regras, Admin, Geo, Vendas, Integrações.
 - [ ] **Fase 8** — Empacotamento white label (branding, onboarding, docs).

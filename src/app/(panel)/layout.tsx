@@ -6,6 +6,7 @@ import { ValuesProvider } from "@/components/panel/values-context";
 import { getActiveArea, getAreas } from "@/lib/areas";
 import { displayName, getCurrentUser } from "@/lib/auth";
 import { getBranding } from "@/lib/branding";
+import { getRevenueTotal } from "@/lib/metrics";
 import { DEFAULT_SETTINGS, getSettings } from "@/lib/settings";
 
 /** O painel depende de sessão/cookies — sempre dinâmico. */
@@ -31,6 +32,13 @@ export default async function PanelLayout({
   // A meta operacional vem das settings da área; cai no valor da própria área.
   const goal = settings?.revenue_goal ?? activeArea?.revenue_goal ?? 0;
 
+  // A barra de meta é MENSAL — independe do período selecionado no header.
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const revenue = activeArea
+    ? await getRevenueTotal(activeArea.id, monthStart, now)
+    : 0;
+
   const sidebarProps = {
     branding,
     areas,
@@ -46,7 +54,7 @@ export default async function PanelLayout({
         <Header
           {...sidebarProps}
           userName={displayName(user)}
-          revenue={0}
+          revenue={revenue}
           goal={goal}
           currency={currency}
         />

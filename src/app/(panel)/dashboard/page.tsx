@@ -8,15 +8,21 @@ import {
   ShoppingBag,
   Target,
   TrendingUp,
+  TriangleAlert,
 } from "lucide-react";
 import type { Metadata } from "next";
 
 import { KpiCard } from "@/components/panel/kpi-card";
+import { RealtimeSales } from "@/components/panel/realtime-sales";
+import { RegionBreakdown } from "@/components/panel/region-breakdown";
+import { RevenueChart } from "@/components/panel/revenue-chart";
 import { Card } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
 import { formatCurrency, formatNumber, formatRoas } from "@/lib/format";
-import { DEFAULT_SETTINGS, getSettings } from "@/lib/settings";
+import { getAreaInsights } from "@/lib/meta/client";
+import { EMPTY_METRICS, getPurchaseMetrics, mergeDailySpend } from "@/lib/metrics";
 import { resolvePeriod } from "@/lib/period";
+import { DEFAULT_SETTINGS, getSettings } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -34,25 +40,71 @@ export default async function DashboardPage({
   const currency = settings?.currency ?? DEFAULT_SETTINGS.currency;
   const taxRate = settings?.tax_rate ?? DEFAULT_SETTINGS.tax_rate;
 
-  // A apuração real (purchases + insights da Meta) chega na Fase 5.
-  const revenue = 0;
-  const adSpend = 0;
-  const tax = 0;
+  if (!activeArea) {
+    return (
+      <Card className="p-6">
+        <p className="text-sm text-muted-foreground">
+          Crie uma área no seletor do topo da sidebar para ver o dashboard.
+        </p>
+      </Card>
+    );
+  }
+
+  // Dados próprios (Last Click) + mídia da Meta, em paralelo.
+  const [metrics, meta] = await Promise.all([
+    getPurchaseMetrics(activeArea.id, period.from, period.to),
+    getAreaInsights(activeArea.id, period.from, period.to),
+  ]);
+
+  const safeMetrics = metrics ?? EMPTY_METRICS;
+
+  const revenue = safeMetrics.revenue;
+  const adSpend = meta.insights.spend;
+  // Lucro = Faturamento − Gasto com Ads − Imposto (alíquota configurável).
+  const tax = revenue * (Number(taxRate) / 100);
   const profit = revenue - adSpend - tax;
-  const sales = 0;
-  const roas = 0;
-  const cpa = 0;
+
+  const sales = safeMetrics.sales;
+  const roas = adSpend > 0 ? revenue / adSpend : 0;
+  const cpa = sales > 0 ? adSpend / sales : 0;
+
+  const daily = mergeDailySpend(safeMetrics.daily, meta.dailySpend);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold tracking-tight">Visão geral</h2>
         <p className="font-mono text-xs text-muted-foreground">
-          {period.label} ·{" "}
-          {period.from.toLocaleDateString("pt-BR")} –{" "}
+          {period.label} · {period.from.toLocaleDateString("pt-BR")} –{" "}
           {period.to.toLocaleDateString("pt-BR")}
         </p>
       </div>
+
+      {!meta.configured ? (
+        <Card className="flex items-start gap-3 p-4">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber" />
+          <p className="text-sm text-muted-foreground">
+            Nenhuma conta de anúncio da Meta conectada nesta área — gasto, ROAS
+            e CPA ficam zerados. Conecte em <strong>Integrações</strong>.
+          </p>
+        </Card>
+      ) : null}
+
+      {meta.errors.length > 0 ? (
+        <Card className="flex items-start gap-3 p-4">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <div className="min-w-0 text-sm">
+            <p className="font-medium">Falha ao ler insights da Meta</p>
+            <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+              {meta.errors.map((err) => (
+                <li key={err} className="truncate font-mono">
+                  {err}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Card>
+      ) : null}
 
       {/* Grade de KPIs: 3 colunas × 2 linhas (empilha no mobile) */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -65,13 +117,13 @@ export default async function DashboardPage({
           label="Gasto com Ads"
           value={formatCurrency(adSpend, currency)}
           icon={Megaphone}
-          sub={`Ads ${formatCurrency(adSpend, currency)} · Imposto ${formatNumber(taxRate, 0)}% (${formatCurrency(tax, currency)})`}
+          sub={`Ads ${formatCurrency(adSpend, currency)} · Imposto ${formatNumber(Number(taxRate))}% (${formatCurrency(tax, currency)})`}
         />
         <KpiCard
           label="Lucro"
           value={formatCurrency(profit, currency)}
           icon={TrendingUp}
-          accent="primary"
+          accent={profit < 0 ? "destructive" : "primary"}
         />
         <KpiCard
           label="Vendas Aprovadas"
@@ -83,7 +135,7 @@ export default async function DashboardPage({
           label="ROAS"
           value={formatRoas(roas)}
           icon={Target}
-          accent="primary"
+          accent={roas > 0 && roas < 1 ? "destructive" : "primary"}
         />
         <KpiCard
           label="CPA"
@@ -92,7 +144,7 @@ export default async function DashboardPage({
         />
       </div>
 
-      {/* Linha inferior: gráfico + mapa + feed em tempo real */}
+      {/* Gráfico + feed em tempo real */}
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
         <Card className="xl:col-span-2">
           <div className="flex items-center gap-2 border-b border-border p-4">
@@ -101,9 +153,9 @@ export default async function DashboardPage({
               Faturamento vs Gasto
             </span>
           </div>
-          <EmptyPanel
-            text="O gráfico de evolução (Recharts) entra na Fase 5, junto com a apuração de faturamento e gasto."
-          />
+          <div className="sensitive">
+            <RevenueChart data={daily} currency={currency} />
+          </div>
         </Card>
 
         <Card>
@@ -113,7 +165,11 @@ export default async function DashboardPage({
               Vendas em Tempo Real
             </span>
           </div>
-          <EmptyPanel text="O feed via Supabase Realtime entra na Fase 5, alimentado pelos webhooks da Fase 4." />
+          <RealtimeSales
+            areaId={activeArea.id}
+            currency={currency}
+            initial={safeMetrics.recent}
+          />
         </Card>
 
         <Card className="xl:col-span-3">
@@ -123,19 +179,9 @@ export default async function DashboardPage({
               Vendas por Região
             </span>
           </div>
-          <EmptyPanel text="O mapa (react-simple-maps) usa o GEO derivado dos headers da Vercel. Entra na Fase 5." />
+          <RegionBreakdown regions={safeMetrics.regions} currency={currency} />
         </Card>
       </div>
-    </div>
-  );
-}
-
-function EmptyPanel({ text }: { text: string }) {
-  return (
-    <div className="flex min-h-44 items-center justify-center p-6">
-      <p className="max-w-sm text-center text-sm text-muted-foreground">
-        {text}
-      </p>
     </div>
   );
 }
