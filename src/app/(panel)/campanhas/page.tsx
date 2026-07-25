@@ -157,8 +157,19 @@ export default async function CampanhasPage({
       .map((r) => [r.id, r.name] as const),
   );
 
-  const totalClicks = meta.rows.reduce((sum, r) => sum + r.clicks, 0);
+  // Totais do funil — TODOS derivados do MESMO conjunto já filtrado. Antes os
+  // cliques vinham de `meta.rows` (sem filtro) e as vendas de `rows` (filtrado),
+  // então filtrar por "ativas" reduzia as vendas sem reduzir os cliques e a taxa
+  // de conversão saía errada.
+  const totalImpressions = rows.reduce((sum, r) => sum + r.impressions, 0);
+  const totalClicks = rows.reduce((sum, r) => sum + r.clicks, 0);
   const totalSales = rows.reduce((sum, r) => sum + r.sales, 0);
+  const totalRevenue = rows.reduce((sum, r) => sum + r.revenue, 0);
+
+  // page_view e initiate_checkout só existem com o snippet opcional de captura
+  // própria. Sem ele, `events_log` fica vazio para sempre — mostrar as etapas
+  // zeradas faria o funil parecer quebrado. Só entram quando há dado real.
+  const hasOwnEvents = funnelBase.views > 0 || funnelBase.checkouts > 0;
 
   return (
     <div className="space-y-4">
@@ -289,54 +300,119 @@ export default async function CampanhasPage({
         <Card>
           <div className="border-b border-border p-4">
             <span className="micro-label">
-              Funil de Conversão
+              Funil de Vendas
             </span>
           </div>
-          <FunnelStep
-            label="Cliques (Meta)"
-            value={totalClicks}
-            previous={null}
-          />
-          <FunnelStep
-            label="Views (page_view)"
-            value={funnelBase.views}
-            previous={totalClicks}
-          />
-          <FunnelStep
-            label="Checkouts"
-            value={funnelBase.checkouts}
-            previous={funnelBase.views}
-          />
-          <FunnelStep
-            label="Vendas"
-            value={totalSales}
-            previous={funnelBase.checkouts}
-          />
-          <div className="px-4 py-3 text-xs text-muted-foreground">
-            Taxa total (clique → venda):{" "}
-            <span className="font-mono tabular">
-              {totalClicks > 0
-                ? formatPercent((totalSales / totalClicks) * 100, 2)
-                : "—"}
-            </span>
-          </div>
+
+          {totalImpressions === 0 && totalClicks === 0 && totalSales === 0 ? (
+            <p className="p-6 text-center text-sm text-muted-foreground">
+              Sem veiculação nem vendas no período selecionado.
+            </p>
+          ) : (
+            <>
+              <FunnelStep
+                label="Impressões"
+                value={totalImpressions}
+                previous={null}
+                base={totalImpressions}
+              />
+              <FunnelStep
+                label="Cliques"
+                value={totalClicks}
+                previous={totalImpressions}
+                base={totalImpressions}
+              />
+              {hasOwnEvents ? (
+                <>
+                  <FunnelStep
+                    label="Views (page_view)"
+                    value={funnelBase.views}
+                    previous={totalClicks}
+                    base={totalImpressions}
+                  />
+                  <FunnelStep
+                    label="Checkouts iniciados"
+                    value={funnelBase.checkouts}
+                    previous={funnelBase.views}
+                    base={totalImpressions}
+                  />
+                </>
+              ) : null}
+              <FunnelStep
+                label={
+                  attribution === "meta"
+                    ? "Vendas (relatadas pela Meta)"
+                    : "Vendas aprovadas (Last Click)"
+                }
+                value={totalSales}
+                previous={hasOwnEvents ? funnelBase.checkouts : totalClicks}
+                base={totalImpressions}
+              />
+
+              <div className="space-y-1.5 px-4 py-3 text-xs text-muted-foreground">
+                <p>
+                  Taxa clique → venda:{" "}
+                  <span className="font-mono tabular text-foreground">
+                    {totalClicks > 0
+                      ? formatPercent((totalSales / totalClicks) * 100, 2)
+                      : "—"}
+                  </span>
+                </p>
+                <p>
+                  Faturamento atribuído:{" "}
+                  <span className="sensitive font-mono tabular text-foreground">
+                    {formatCurrency(totalRevenue, currency)}
+                  </span>
+                  {totalSales > 0 ? (
+                    <>
+                      {" · ticket médio "}
+                      <span className="sensitive font-mono tabular text-foreground">
+                        {formatCurrency(totalRevenue / totalSales, currency)}
+                      </span>
+                    </>
+                  ) : null}
+                </p>
+                {!hasOwnEvents ? (
+                  <p className="pt-1">
+                    Views e checkouts iniciados dependem do snippet de captura
+                    própria, que é opcional e não está em uso. A atribuição por
+                    anúncio não precisa dele.
+                  </p>
+                ) : null}
+              </div>
+            </>
+          )}
         </Card>
       </div>
     </div>
   );
 }
 
+/**
+ * Uma etapa do funil.
+ *
+ * `previous` alimenta o PERCENTUAL (conversão em relação à etapa anterior).
+ * `base` alimenta a LARGURA da barra (proporção sobre o topo do funil) — sem
+ * isso, uma etapa que converte 100% da anterior desenhava barra cheia e o
+ * gráfico não afunilava, que era o oposto do que um funil deve mostrar.
+ */
 function FunnelStep({
   label,
   value,
   previous,
+  base,
 }: {
   label: string;
   value: number;
   previous: number | null;
+  base: number;
 }) {
   const rate = previous && previous > 0 ? (value / previous) * 100 : null;
-  const width = previous && previous > 0 ? Math.min((value / previous) * 100, 100) : 100;
+
+  const raw = base > 0 ? (value / base) * 100 : value > 0 ? 100 : 0;
+  // Piso visual: uma etapa com valor > 0 nunca some da tela (uma venda sobre
+  // milhares de impressões daria uma barra de largura zero).
+  const width = value > 0 ? Math.min(Math.max(raw, 1.5), 100) : 0;
 
   return (
     <div className="border-b border-border px-4 py-3">
