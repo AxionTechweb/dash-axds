@@ -248,8 +248,11 @@ delas a plataforma realmente usa.
 
 ## Regras e cron (Fase 7)
 
-- `/api/cron/rules` (de hora em hora) e `/api/cron/cleanup` (diário), agendados em
-  `vercel.json`. Ambos exigem `Authorization: Bearer $CRON_SECRET` comparado em tempo
+- `/api/cron/rules` e `/api/cron/cleanup` (ambos diários), agendados em `vercel.json`.
+  O de regras era de hora em hora, mas **o plano Hobby da Vercel só permite cron
+  diário** — ficou às 09:00 UTC (06:00 BRT), antes do grosso da veiculação. Para voltar
+  à frequência horária: plano Pro, ou um cron externo chamando a rota com o
+  `Authorization: Bearer $CRON_SECRET`. Ambos exigem `Authorization: Bearer $CRON_SECRET` comparado em tempo
   constante e **falham fechados**: sem `CRON_SECRET` no env, a rota devolve 401.
 - O motor (`src/lib/rules/engine.ts`) reaproveita `getMetaEntities` + `getLastClickByAd`,
   então não gera requisições extras à Meta além do cache normal.
