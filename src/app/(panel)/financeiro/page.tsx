@@ -137,7 +137,7 @@ export default async function FinanceiroPage({
 
       <Card>
         <div className="border-b border-border p-4">
-          <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span className="micro-label">
             Evolução do faturamento
           </span>
         </div>
@@ -178,7 +178,7 @@ function BreakdownCard({
   return (
     <Card>
       <div className="border-b border-border p-4">
-        <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+        <span className="micro-label">
           {title}
         </span>
       </div>

@@ -1,16 +1,25 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono, Manrope } from "next/font/google";
+import { JetBrains_Mono, Oswald, Plus_Jakarta_Sans } from "next/font/google";
 
 import { getBranding } from "@/lib/branding";
 
 import "./globals.css";
 
-const manrope = Manrope({
-  variable: "--font-manrope",
+/** Corpo do texto — a fonte do design de referência. */
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-jakarta",
   subsets: ["latin"],
   display: "swap",
 });
 
+/** Títulos display: caixa-alta, condensada, bem apertada. */
+const oswald = Oswald({
+  variable: "--font-oswald",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+/** Rótulos micro, KPIs e tabelas (numerais tabulares). */
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
   subsets: ["latin"],
@@ -54,7 +63,7 @@ export default async function RootLayout({
       lang="pt-BR"
       data-theme="dark"
       style={primaryOverride}
-      className={`${manrope.variable} ${jetbrainsMono.variable} h-full`}
+      className={`${jakarta.variable} ${oswald.variable} ${jetbrainsMono.variable} h-full`}
       suppressHydrationWarning
     >
       <head>

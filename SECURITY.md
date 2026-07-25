@@ -28,7 +28,7 @@ Auditoria da Fase 9. Use esta página antes de publicar cada instância.
 - [ ] URL de webhook cadastrada no checkout que você usa (Hotmart e/ou Kiwify),
       com hottok/token salvos no painel.
 - [ ] `utm_content={{ad.id}}` configurado nos anúncios.
-- [ ] Código de rastreio externo levando o `ad_id` ao checkout (`src` na Hotmart,
+- [ ] Código de rastreio externo levando o `ad_id` ao checkout (`xcod` na Hotmart,
       `utm_content` na Kiwify) — **confirmado com uma venda real**.
 - [ ] *(Só se usar a captura própria)* Snippet instalado e origens permitidas (CORS)
       cadastradas por área.
@@ -44,7 +44,7 @@ Auditoria da Fase 9. Use esta página antes de publicar cada instância.
 | `rate_limit_counters` sem policy (só servidor) | ✅ proposital |
 | `service_role` só no servidor | ✅ `admin.ts` com `server-only` |
 | `NEXT_PUBLIC_` expostos | ✅ apenas URL e ANON |
-| Segredos cifrados (pgcrypto) | ✅ `app_encrypt`/`app_decrypt`, EXECUTE só para `service_role` |
+| Segredos cifrados (pgcrypto) | ✅ `app_encrypt`/`app_decrypt`, EXECUTE só para `service_role` (ver nota abaixo) |
 | `ENCRYPTION_KEY` fora do banco | ✅ só em env |
 | Endpoints de captura: zod + rate limit + CORS | ✅ via `guardCapture` |
 | Webhooks: validação nativa | ✅ hottok e HMAC, ambos em tempo constante |
@@ -56,6 +56,39 @@ Auditoria da Fase 9. Use esta página antes de publicar cada instância.
 | Zero hardcode (credenciais/IDs/domínios/marca) | ✅ varredura no repo |
 
 ---
+
+### `REVOKE ... FROM PUBLIC` não basta no Supabase
+
+Encontrado ao validar uma instalação real (2026-07-25), **não** pela leitura das
+migrations — por isso a auditoria original marcou como ✅ algo que não era verdade.
+
+Todo projeto Supabase traz `DEFAULT PRIVILEGES` que concedem `EXECUTE` (funções) e
+privilégios de tabela aos papéis `anon` e `authenticated` **explicitamente, por nome**.
+Um `revoke all ... from public` remove só o grant do pseudo-papel `PUBLIC` — os grants
+nominais a `anon`/`authenticated` sobrevivem.
+
+Consequência observada com a chave anon (que é pública, vai no bundle do browser):
+`app_encrypt`, `app_decrypt`, `rate_limit_hit`, `identify_visitor` e `log_event`
+executavam normalmente. As duas últimas são `security definer` e escrevem **furando a
+RLS**, pulando CORS, zod e rate limit dos endpoints públicos.
+
+Corrigido em `20260725120000_function_grants_lockdown.sql`, que revoga de
+`anon, authenticated` e ajusta os `DEFAULT PRIVILEGES` para funções futuras.
+Depois da correção, as seis funções respondem `403 permission denied` para anon e
+para authenticated.
+
+**Como conferir na sua instância** — com a chave anon:
+
+```
+POST /rest/v1/rpc/app_decrypt  → deve dar 403 permission denied
+```
+
+Se der `200`, a migration de lockdown não foi aplicada.
+
+**Pendente (defesa em profundidade):** os privilégios de **tabela** de
+`anon`/`authenticated` continuam abertos pelo mesmo motivo. Hoje a RLS bloqueia toda
+escrita — verificado: `POST` com anon responde `new row violates row-level security
+policy`, e não `permission denied for table`. Mas a proteção depende de uma camada só.
 
 ## Decisões de segurança que valem explicar
 

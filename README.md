@@ -1,7 +1,8 @@
 # Painel de Tracking e Atribuição (White Label)
 
 Painel **single-tenant** de leitura e análise de tracking e atribuição de anúncios.
-Coleta visitas, eventos e compras (webhooks Hotmart/Kiwify) e lê insights da Meta Ads.
+Coleta visitas, eventos e compras (webhooks de 7 plataformas de checkout) e lê
+insights da Meta Ads.
 
 > **Não envia** eventos de conversão para lugar nenhum — sem Conversions API da Meta e
 > sem Measurement Protocol do GA4. É um painel de **leitura e análise**.
@@ -19,7 +20,9 @@ instância independente. Zero credencial, ID, domínio ou marca fixos no código
   **payload do webhook** — nada precisa ser instalado nas landing pages.
 - **Captura própria (opcional)**: snippet leve que gera um `user_id` anônimo, guarda
   UTMs e dispara `page_view` / `initiate_checkout`. Só acrescenta funil e eventos.
-- **Webhooks de compra**: Hotmart e Kiwify, validados pelo mecanismo nativo de cada uma.
+- **Webhooks de compra**: 7 plataformas (Hotmart, Kiwify, Kirvano, Perfect Pay, Ticto,
+  Cakto, Greenn), validadas pelo mecanismo nativo de cada uma. Uma rota genérica dirigida
+  por um registro — adicionar plataforma não exige código novo.
 - **Dashboard**: faturamento, gasto, lucro, ROAS, CPA, evolução, regiões e vendas em
   tempo real.
 - **Campanhas**: hierarquia da Meta com dois modos de atribuição e edição inline de
@@ -49,7 +52,14 @@ instância independente. Zero credencial, ID, domínio ou marca fixos no código
 3. Em **Authentication → Providers → Email**, **DESLIGUE** o cadastro público
    ("Allow new users to sign up"). O acesso é só por convite.
 
-### 2. Aplicar as migrations
+### 2. Aplicar o schema
+
+Duas opções, ambas 100% reproduzíveis a partir de `supabase/migrations`:
+
+**a) Via SQL Editor (sem CLI)** — copie todo o `supabase/setup.sql` e cole no
+**SQL Editor** do Supabase. Rode uma vez, num projeto novo e vazio.
+
+**b) Via Supabase CLI**
 
 ```bash
 npm install
@@ -57,7 +67,8 @@ npx supabase link --project-ref SEU_PROJECT_REF
 npx supabase db push
 ```
 
-O schema é 100% reproduzível a partir de `supabase/migrations` — nenhum passo manual.
+Depois, opcionalmente, cole `supabase/validacao.sql` no SQL Editor para conferir que
+tabelas, funções, RLS e a linha de branding ficaram corretas.
 
 ### 3. Configurar o ambiente
 
@@ -91,7 +102,7 @@ primeiro administrador e o nome da primeira área.
 
 ### 6. Conectar as integrações
 
-Entre no painel e vá em **Integrações** — há um checklist do que falta conectar.
+Entre no painel e vá em **Integrações** — duas conexões: **Meta Ads** e **Checkout**.
 
 #### Conta de anúncio da Meta
 
@@ -103,21 +114,26 @@ Você precisa de um token de **System User** do Business Manager (não expira):
    permissão total.
 3. Clique em **Gerar novo token**, escolha seu app e marque os escopos
    **`ads_read`** e **`ads_management`**.
-4. No painel, em Integrações → **Adicionar conta**, informe um rótulo, o ID da conta
-   (`act_1234567890`) e o token. Use **Testar conexão** — ele valida o token, os escopos
-   e o acesso à conta antes de salvar.
+4. No painel, em Integrações → **Meta Ads**, cole o token e clique em **Buscar contas**.
+   O painel lista **todas** as contas que aquele token enxerga; marque as que quiser e
+   conecte. Não é preciso digitar o `act_<id>`.
 
 O token é **cifrado** antes de ir para o banco e nunca é exibido de volta.
 
-#### Webhooks
+#### Checkout
 
-Escolha o checkout que você usa. Copie a URL pronta em Integrações e cadastre na
-plataforma:
+Em Integrações → **Checkout**, selecione a sua plataforma numa grade. As instruções
+daquela plataforma aparecem: a URL do webhook pronta para copiar, o passo a passo, qual
+parâmetro leva o `ad_id` e o campo do segredo (hottok / token / assinatura), que é
+cifrado antes de ir para o banco.
 
-- **Hotmart**: Ferramentas → Webhook. Cole a URL e depois salve o **hottok** da sua
-  conta no painel.
-- **Kiwify**: Apps → Webhooks. Cole a URL, escolha os eventos e salve o **token de
-  assinatura** no painel.
+Suportadas: **Hotmart, Kiwify, Kirvano, Perfect Pay, Ticto, Cakto, Greenn**.
+
+> **Hotmart, Kiwify, Kirvano e Perfect Pay** têm o payload confirmado contra um envio
+> real. **Ticto, Cakto e Greenn** estão parciais (estrutura conhecida, mas com um ponto
+> em aberto — a interface avisa em cada uma). O `raw_webhook` é sempre salvo, então a
+> primeira venda real revela o que falta, e a correção é editar o registro em
+> `src/lib/checkout/platforms.ts`, não escrever código.
 
 É pelo payload desse webhook que o painel lê o `ad_id`, as UTMs e o endereço do
 comprador. Não é preciso configurar mais nada do lado do site.
@@ -126,12 +142,13 @@ comprador. Não é preciso configurar mais nada do lado do site.
 
 Nos anúncios da Meta, use **`utm_content={{ad.id}}`** na URL.
 
-O seu código de rastreio precisa levar esse valor até o link do checkout:
+O seu código de rastreio precisa levar esse valor até o link do checkout, no parâmetro
+que cada plataforma usa (mostrado na tela ao selecioná-la):
 
 | Plataforma | Parâmetro no link do checkout |
 |---|---|
-| Hotmart | `src=<ad_id>` |
-| Kiwify | `utm_content=<ad_id>` |
+| Hotmart | `xcod=<ad_id>` |
+| Demais | `utm_content=<ad_id>` |
 
 O `ad_id` só é aceito se for **numérico**. Venda sem `ad_id` continua sendo gravada —
 entra como orgânico/direto.
@@ -145,8 +162,8 @@ iniciados, funil e a aba Eventos. A atribuição por anúncio funciona sem isso.
 <script src="https://SEU-DOMINIO/track.js" data-area="TOKEN_DA_AREA" defer></script>
 ```
 
-Usando o snippet, cadastre em Integrações → Preferências os domínios das suas landing
-pages (um por linha; aceita `*.seudominio.com`).
+Usando o snippet, cadastre em **Configurações → Preferências da área** os domínios das
+suas landing pages (um por linha; aceita `*.seudominio.com`).
 
 > **Sem nenhuma origem cadastrada, a captura é bloqueada** para requisições de
 > navegador. É proposital — evita que qualquer site envie dados para a sua instância.

@@ -5,11 +5,23 @@ import { z } from "zod";
 
 import { getActiveArea } from "@/lib/areas";
 import { getCurrentUser } from "@/lib/auth";
+import { getPlatform } from "@/lib/checkout/platforms";
 import { encryptSecret } from "@/lib/crypto";
+import {
+  discoverAdAccounts,
+  type DiscoveredAccount,
+} from "@/lib/meta/discover";
 import { testAdAccountConnection } from "@/lib/meta/test-connection";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type FormState = { error?: string; ok?: string };
+
+/** Estado do fluxo "colar token → listar contas → escolher". */
+export type DiscoverState = {
+  error?: string;
+  ok?: string;
+  accounts?: DiscoveredAccount[];
+};
 
 /**
  * Configuração das integrações. Todo segredo é CIFRADO (pgcrypto) antes de ir
@@ -101,44 +113,154 @@ export async function saveSettings(
 
 /* ------------------------------------------------- segredos de webhook */
 
-export async function saveWebhookSecret(
+/**
+ * Salva (ou remove) o segredo do webhook de UMA plataforma de checkout.
+ * Uma linha por (área, plataforma) em `checkout_integrations`, com o valor
+ * cifrado. A lista de plataformas válidas vem do registro.
+ */
+export async function saveCheckoutSecret(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
   const ctx = await requireArea();
   if ("error" in ctx) return { error: ctx.error };
 
-  const platform = String(formData.get("platform") ?? "");
+  const plataforma = String(formData.get("plataforma") ?? "");
+  const platform = getPlatform(plataforma);
+  if (!platform) return { error: "Plataforma inválida." };
+
   const value = String(formData.get("value") ?? "").trim();
-
-  const column =
-    platform === "hotmart"
-      ? "hotmart_hottok"
-      : platform === "kiwify"
-        ? "kiwify_webhook_token"
-        : null;
-
-  if (!column) return { error: "Plataforma inválida." };
-
   const admin = createAdminClient();
 
   // Campo vazio remove o segredo (desconecta a integração).
-  const payload = value ? await encryptSecret(value) : null;
+  if (!value) {
+    const { error } = await admin
+      .from("checkout_integrations")
+      .delete()
+      .eq("area_id", ctx.area.id)
+      .eq("plataforma", plataforma);
 
-  const { error } = await admin
-    .from("settings")
-    .update({ [column]: payload })
-    .eq("area_id", ctx.area.id);
+    if (error) return { error: `Falha ao remover: ${error.message}` };
+
+    await audit(ctx.area.id, ctx.user.email, "config.checkout_secret", {
+      plataforma,
+      removed: true,
+    });
+    revalidatePath("/integracoes");
+    return { ok: `${platform.label} desconectada.` };
+  }
+
+  const { error } = await admin.from("checkout_integrations").upsert(
+    {
+      area_id: ctx.area.id,
+      plataforma,
+      secret: await encryptSecret(value),
+      enabled: true,
+    },
+    { onConflict: "area_id,plataforma" },
+  );
 
   if (error) return { error: `Falha ao salvar: ${error.message}` };
 
-  await audit(ctx.area.id, ctx.user.email, "config.webhook_secret", {
-    platform,
-    removed: !value,
+  await audit(ctx.area.id, ctx.user.email, "config.checkout_secret", {
+    plataforma,
+    removed: false,
   });
 
   revalidatePath("/integracoes");
-  return { ok: value ? "Token salvo e cifrado." : "Token removido." };
+  return { ok: `${platform.label} conectada — segredo cifrado.` };
+}
+
+/* --------------------------------------- Meta: descobrir e conectar contas */
+
+/**
+ * Etapa 1: cola o token → lista TODAS as contas de anúncio que ele enxerga.
+ *
+ * O token não volta para o cliente por aqui — quem o mantém é o próprio campo
+ * do formulário, que o usuário acabou de digitar. Nada é gravado nesta etapa.
+ */
+export async function discoverAccounts(
+  _prev: DiscoverState,
+  formData: FormData,
+): Promise<DiscoverState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const token = String(formData.get("ads_token") ?? "").trim();
+  if (!token) return { error: "Cole o token do System User." };
+
+  const result = await discoverAdAccounts(token);
+  if (!result.ok) return { error: result.error };
+
+  return {
+    accounts: result.accounts,
+    ok: `${result.accounts.length} conta(s) encontrada(s).`,
+  };
+}
+
+/**
+ * Etapa 2: grava as contas marcadas, todas com o mesmo token (cifrado).
+ *
+ * Revalida o token contra a Meta antes de gravar e confirma que as contas
+ * escolhidas realmente estão entre as que ele enxerga — não confiamos no que
+ * voltou do formulário.
+ */
+export async function connectAccounts(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const token = String(formData.get("ads_token") ?? "").trim();
+  const selected = formData.getAll("selected").map(String).filter(Boolean);
+
+  if (!token) return { error: "Token ausente. Busque as contas novamente." };
+  if (selected.length === 0) {
+    return { error: "Marque ao menos uma conta para conectar." };
+  }
+
+  const result = await discoverAdAccounts(token);
+  if (!result.ok) return { error: result.error };
+
+  const byId = new Map(result.accounts.map((a) => [a.id, a]));
+  const invalid = selected.filter((id) => !byId.has(id));
+  if (invalid.length > 0) {
+    return {
+      error: `Este token não enxerga: ${invalid.join(", ")}. Busque as contas novamente.`,
+    };
+  }
+
+  const encrypted = await encryptSecret(token);
+  const admin = createAdminClient();
+
+  // Uma linha por conta; o mesmo token cifrado se repete em cada uma.
+  const rows = selected.map((id) => ({
+    area_id: ctx.area.id,
+    label: byId.get(id)?.name ?? id,
+    ad_account_id: id,
+    ads_token: encrypted,
+  }));
+
+  // Remove as que já existiam para não duplicar ao reconectar.
+  await admin
+    .from("meta_ad_accounts")
+    .delete()
+    .eq("area_id", ctx.area.id)
+    .in("ad_account_id", selected);
+
+  const { error } = await admin.from("meta_ad_accounts").insert(rows);
+  if (error) return { error: `Falha ao salvar: ${error.message}` };
+
+  await audit(ctx.area.id, ctx.user.email, "config.meta_accounts_connect", {
+    accounts: selected,
+    count: selected.length,
+  });
+
+  revalidatePath("/integracoes");
+  return {
+    ok: `${selected.length} conta(s) conectada(s) e validada(s).`,
+  };
 }
 
 /* ------------------------------------------------ contas de anúncio Meta */

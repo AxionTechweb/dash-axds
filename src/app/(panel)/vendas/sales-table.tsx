@@ -74,7 +74,7 @@ export function SalesTable({ rows }: { rows: SaleRow[] }) {
               ].map((label) => (
                 <th
                   key={label}
-                  className="whitespace-nowrap px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground"
+                  className="whitespace-nowrap px-3 py-2 micro-label"
                 >
                   {label}
                 </th>

@@ -48,7 +48,9 @@ create policy "authenticated read" on public.audit_log
 -- Grants explícitos (reprodutíveis em qualquer projeto Supabase novo).
 -- authenticated: apenas SELECT (a escrita é bloqueada por falta de policy).
 -- service_role: acesso total (e bypass de RLS).
--- anon: sem grants em tabelas => não lê nada.
+-- ATENÇÃO: os DEFAULT PRIVILEGES do Supabase concedem privilégios de TABELA a
+-- anon/authenticated automaticamente. Quem efetivamente bloqueia a escrita é a
+-- RLS, não a ausência de grant. Ver 20260725120000_function_grants_lockdown.sql.
 -- ---------------------------------------------------------------------------
 grant usage on schema public to anon, authenticated, service_role;
 

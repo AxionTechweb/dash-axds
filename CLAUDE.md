@@ -27,8 +27,10 @@ Um **painel de LEITURA e análise** de tracking e atribuição de anúncios. O s
   product_name, logo claro/escuro, favicon, override opcional da cor primária. Defaults
   **neutros** no repo (product_name = "Dashboard").
 - **Migrations versionadas** (`supabase/migrations`, via Supabase CLI) — schema 100%
-  reproduzível em qualquer projeto Supabase novo. Seed **opcional** (script separado,
-  nunca automático).
+  reproduzível em qualquer projeto Supabase novo. Alternativa sem CLI:
+  `supabase/setup.sql` (dump das migrations na ordem, para colar no SQL Editor) +
+  `supabase/validacao.sql` (confere o resultado). **Ao criar uma migration nova,
+  regenere o `setup.sql`.** Seed **opcional** (script separado, nunca automático).
 
 ## Stack e versões (estáveis; docs conferidas em 2026-07)
 
@@ -111,7 +113,25 @@ Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta
 `rate_limit_counters`. Índices por `area_id`, `user_id`, `ad_id`, `event_name`, `created_at`.
 
 **Status interno de compra** (unificado): `approved`, `pending`, `refunded`, `chargeback`,
-`canceled`. **Plataforma**: `hotmart`, `kiwify`.
+`canceled`.
+
+**Plataformas de checkout** (7): `hotmart`, `kiwify`, `kirvano`, `perfectpay`, `ticto`,
+`cakto`, `greenn`. A lista vive em `src/lib/checkout/platforms.ts` (`PLATFORM_IDS`) e é
+espelhada no check de `purchases.plataforma` — **os dois precisam andar juntos**.
+
+**Confirmadas com payload real** (`confirmed: true`): `hotmart`, `kiwify`, `kirvano`,
+`perfectpay`. **Parciais** (`confirmed: false`, estrutura conhecida mas com um ponto em
+aberto): `ticto` (ad_id não visto num payload com anúncio), `cakto` (exemplo era uma
+lista de API, envelope do webhook incerto), `greenn` (header de auth não verificado).
+O registro guarda por plataforma: `amountInCents` (Kiwify e Ticto = centavos; resto =
+reais), `adIdSegment` (desmonte de campo composto tipo `sck`/`utm_perfect`),
+`placeholders` (a Ticto manda `"Não Informado"`), `metaArray` (a Greenn manda o rastreio
+num array `saleMetas`). O parser de moeda (`parseMoney`) lê `"R$ 169,80"` da Kirvano.
+
+Segredos de webhook ficam em `checkout_integrations` (PK `area_id`+`plataforma`,
+`secret` cifrado). Antes eram duas colunas em `settings` (`hotmart_hottok`,
+`kiwify_webhook_token`), que não escalavam — a migration `..140000_checkout_platforms.sql`
+migra os dados e remove as colunas.
 
 ## Captura (Fase 3) — OPCIONAL
 
@@ -120,8 +140,9 @@ Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta
 > link do checkout, e o painel lê tudo do **payload do webhook**. Ver
 > "Atribuição por anúncio" abaixo.
 >
-> O snippet continua no repo como recurso **opcional**, exposto em
-> *Integrações → Captura própria (opcional)*. Ele só acrescenta o que o webhook não tem:
+> O snippet continua no repo (`public/track.js` e as rotas `/api/identify` e
+> `/api/event` seguem funcionando), mas **saiu da tela de Integrações** — ela agora
+> tem só Meta e Checkout. Ele só acrescenta o que o webhook não tem:
 > `initiate_checkout`, `page_view`, funil e a aba Eventos. **Nada da atribuição por
 > anúncio depende dele.** Sem snippet, `purchases.match` fica `none` — é o esperado,
 > não é falha.
@@ -148,11 +169,23 @@ Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta
 ## Atribuição por anúncio (ad_id) — sempre por ID exato
 
 - Anúncios usam `utm_content={{ad.id}}`. **Um código de rastreio externo** (fora deste
-  projeto) propaga o `ad_id` para o checkout: Hotmart via `src`, Kiwify via `utm_content`.
+  projeto) propaga o `ad_id` para o checkout. O parâmetro de cada plataforma está no
+  registro (`trackingParam`): **Hotmart via `xcod`**, demais via `utm_content`.
   Webhooks extraem e gravam em `purchases.ad_id` (**validar formato numérico**).
-- **Ordem de precedência do `ad_id`**: campo nativo do webhook (`src`/`utm_content`) →
-  `utm.content` extraída do payload → `utm_content` do visitor casado (só existe com o
-  snippet opcional ligado).
+- **Hotmart: o `ad_id` chega em `origin.xcod`, NÃO em `origin.src`** — confirmado nesta
+  instalação, e chega **limpo** (só os dígitos do `{{ad.id}}`). O `src` continua nos
+  candidatos, mas como alternativa.
+- **Ordem de precedência do `ad_id`**: campos nativos do webhook (na ordem de
+  `paths.adId`) → `utm.content` extraída do payload → última posição do pacote por pipe
+  → `utm_content` do visitor casado (só existe com o snippet opcional ligado).
+- **`pickAdId` percorre TODOS os candidatos** até achar um id válido, em vez de parar no
+  primeiro caminho preenchido. Sem isso, um `src=organico` esconderia o `xcod` que tem o
+  id de verdade.
+- **Campos compostos** (rede de segurança, não acionada nesta instalação): `extractAdId`
+  desmonta valores com vários ids num campo só (`"1727809035401_17302278327851"`,
+  separadores `_ | - , ; : /`) e escolhe o pedaço pelo `adIdSegment` da plataforma
+  (`last` por padrão, também `first` e `longest`). Com um id limpo — o caso daqui — esse
+  caminho nem é acionado.
 - **UTMs e GEO vêm do próprio webhook** (`PurchaseInput.utm` / `.geo` em
   `src/lib/webhooks/common.ts`), com o visitante apenas como fallback. É isso que faz a
   atribuição funcionar sem nada instalado na landing page. Metadados são **clipados**,
@@ -166,25 +199,40 @@ Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta
 
 ## Webhooks de compra (Fase 4)
 
-- Rotas: `/api/webhook/hotmart?a=<public_token>` e `/api/webhook/kiwify?a=<public_token>`.
+- **Rota única e genérica**: `/api/webhook/<plataforma>?a=<public_token>`, dirigida pelo
+  **registro** em `src/lib/checkout/platforms.ts`. Adicionar plataforma = adicionar uma
+  entrada no registro; **não se escreve rota nova**.
+- Cada entrada declara: modo de autenticação (`header-token` / `body-token` / `hmac`),
+  caminhos candidatos de cada campo, mapa de status, se o valor vem em centavos, qual
+  parâmetro leva o `ad_id`, os passos de conexão e as ressalvas.
 - **O token na URL só ROTEIA** para a área. A **autenticação** é sempre pelo mecanismo
-  nativo: `x-hotmart-hottok` (comparado em tempo constante) e **assinatura HMAC** do
-  **corpo bruto** na Kiwify. Por isso a área é resolvida antes da assinatura — é dela que
-  vem o segredo.
-- `ad_id` só é aceito se **numérico** (`^\d{5,25}$`); qualquer outra coisa em `src`/
-  `utm_content` é descartada. Fallback: `utm_content` do visitante casado.
+  nativo da plataforma, sempre em tempo constante. Por isso a área é resolvida antes da
+  assinatura — é dela que vem o segredo.
+- `ad_id` só é aceito se **numérico** (`^\d{5,25}$`). Precedência: campo nativo →
+  `utm_content` → última posição do pacote por pipe → `utm_content` do visitante casado.
+- **Pacote por pipe** (`pipedTrackingOrder`): alguns rastreadores externos empacotam as
+  UTMs num campo só (`sck = "ig|social|bio|null|null"`). Quando declarado, o campo é
+  desempacotado e **não** é tratado como id de visitante.
 - **Match** do visitante, nesta ordem: `user_id` (sck) → e-mail → telefone (últimos
   dígitos). O como fica gravado em `purchases.match` (`user_id`/`email`/`telefone`/`none`).
-- **UPSERT idempotente** por `transaction_id`; `raw_webhook` sempre salvo para auditoria.
+- **UPSERT idempotente** por `transaction_id`; `raw_webhook` **sempre** salvo, inclusive
+  quando um campo não é extraído — é o que permite corrigir os caminhos depois sem perder
+  dado.
 - Status desconhecido vira `pending` — **nunca** descartamos uma venda.
+- Valor: só divide por 100 quando a plataforma **declara** `amountInCents: true`. Com
+  `"unknown"`, usa como está — de propósito: um valor 100× menor passaria despercebido.
 - Helpers puros de parsing em `src/lib/webhooks/parse.ts` (sem `server-only`, testáveis).
 
-### A CONFIRMAR com webhook real (docs oficiais são renderizadas por JS)
-1. **Kiwify `sck` vs `s1`**: lemos os dois (e o snippet envia os dois). Confirmar e enxugar.
-2. **Kiwify valores em centavos**: `charge_amount` inteiro é dividido por 100. Se vier
-   fracionário, é usado como está. Conferir contra uma venda real.
-3. **Algoritmo do HMAC da Kiwify**: aceitamos sha1 e sha256 (ambos exigem o segredo, então
-   a verificação segue válida). Fixar num só depois de confirmar.
+### `confirmed` — o campo mais importante do registro
+`confirmed: true` em **hotmart, kiwify, kirvano, perfectpay** (verificadas contra payload
+real). `false` em **ticto, cakto, greenn** — estrutura conhecida, mas com um ponto em
+aberto (ad_id sem exemplo com anúncio / envelope do webhook / header de auth). A UI avisa
+isso em cada uma. Quando a autenticação falha numa plataforma não confirmada, a rota
+registra no log os **nomes** dos headers recebidos (nunca os valores) para revelar qual
+delas a plataforma realmente usa.
+
+**Ao confirmar uma plataforma com venda real:** ajuste os caminhos no registro, vire
+`confirmed: true`, fixe `amountInCents` e remova as ressalvas resolvidas.
 
 ## Meta Ads — leitura de insights (Fase 5)
 
@@ -207,6 +255,30 @@ Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta
   então não gera requisições extras à Meta além do cache normal.
 - Ações **conservadoras**: só `pausar` (e apenas o que está ACTIVE) ou `notificar`.
   Nunca aumenta orçamento nem ativa nada. Tudo vai para `rule_executions` **e** `audit_log`.
+
+## Design system (referência "Finex")
+
+O front segue uma referência de tema escuro. **Dirigido por tokens** — mudanças
+visuais entram pelo centro, nunca por classes soltas nas páginas.
+
+| Camada | Onde | O que define |
+|---|---|---|
+| Tokens | `src/app/globals.css` | Cores HSL, raio, fontes, utilitários (`.micro-label`, `.stat-value`, `.display-title`, `.flashlight`, `.status-dot`, `.hairline-fade`) |
+| Fontes | `src/app/layout.tsx` | Plus Jakarta Sans (corpo), Oswald (display), JetBrains Mono (rótulos/números) |
+| Primitivos | `src/components/ui/` | `Card`/`SectionHeading`, `Button`/`PillGroup`, `Input`, `Flashlight` |
+| Painel | `src/components/panel/` | `KpiCard`, `Sidebar`, `Header`, gráficos |
+
+- **Assinaturas:** fundo `#020202` com listras diagonais a −45°; glows radiais
+  ciano/roxo; cards `rounded-2xl` com borda branca a 10% que acende no acento no
+  hover; rótulos micro em mono caixa-alta; valores em `font-light` com numerais
+  tabulares; botões em pílula; títulos display em Oswald caixa-alta.
+- **`Card` é componente de SERVIDOR.** O brilho que segue o cursor vive no
+  `<Flashlight>`, wrapper cliente separado — não arrastar o sistema de cards para
+  o bundle do browser.
+- **Zero hardcode continua valendo:** a cor primária sai de `--primary` e o
+  branding da instância pode sobrescrevê-la. Os gráficos leem
+  `hsl(var(--primary))` / `hsl(var(--accent-purple))` em vez de cores fixas, então
+  acompanham tema e branding. O tema claro segue funcional.
 
 ## Convenções de código
 
@@ -249,3 +321,6 @@ npm run lint           # eslint
 npx supabase link      # linkar ao projeto Supabase (cloud)
 npx supabase db push   # aplicar migrations no projeto linkado
 ```
+
+Sem CLI: cole `supabase/setup.sql` no SQL Editor (aplica tudo) e depois
+`supabase/validacao.sql` (confere). Regenere o `setup.sql` a cada migration nova.

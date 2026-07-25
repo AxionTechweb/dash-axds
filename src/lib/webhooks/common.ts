@@ -2,18 +2,21 @@ import "server-only";
 
 import { z } from "zod";
 
+import { PLATFORM_IDS } from "@/lib/checkout/platforms";
 import { decryptSecret } from "@/lib/crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import { validAdId } from "./parse";
+import { extractAdId } from "./parse";
 import type { PurchaseStatus } from "./status";
 
 // Helpers puros de parsing vivem em ./parse (testáveis fora do Next).
 export {
+  extractAdId,
   firstNumber,
   firstString,
   get,
   normalizeCountry,
+  pickAdId,
   safeEqual,
   validAdId,
 } from "./parse";
@@ -28,15 +31,16 @@ export type WebhookAreaSecret = {
 
 /**
  * Resolve a área pelo token público da URL e devolve o segredo do webhook
- * já decifrado.
+ * daquela plataforma, já decifrado.
  *
  * IMPORTANTE: o token da URL serve apenas para ROTEAR o webhook até a área
  * certa. A AUTENTICAÇÃO é sempre pelo mecanismo nativo da plataforma
- * (hottok da Hotmart / assinatura HMAC da Kiwify).
+ * (hottok, header de token ou assinatura HMAC) — ver o registro em
+ * `src/lib/checkout/platforms.ts`.
  */
 export async function resolveWebhookArea(
   token: string,
-  field: "hotmart_hottok" | "kiwify_webhook_token",
+  plataforma: string,
 ): Promise<WebhookAreaSecret | null> {
   try {
     const admin = createAdminClient();
@@ -49,16 +53,22 @@ export async function resolveWebhookArea(
 
     if (!area) return null;
 
-    const { data: settings } = await admin
-      .from("settings")
-      .select("hotmart_hottok, kiwify_webhook_token")
+    const { data: integration } = await admin
+      .from("checkout_integrations")
+      .select("secret, enabled")
       .eq("area_id", area.id)
+      .eq("plataforma", plataforma)
       .maybeSingle();
 
-    const cipher = settings?.[field] as string | null | undefined;
-    if (!cipher) return { areaId: area.id, secret: null };
+    // Integração desligada explicitamente: trata como não configurada.
+    if (!integration?.secret || integration.enabled === false) {
+      return { areaId: area.id, secret: null };
+    }
 
-    return { areaId: area.id, secret: await decryptSecret(cipher) };
+    return {
+      areaId: area.id,
+      secret: await decryptSecret(integration.secret as string),
+    };
   } catch (err) {
     console.error("[webhook] falha ao resolver área/segredo:", err);
     return null;
@@ -86,7 +96,8 @@ export type PurchaseGeo = {
 export type PurchaseInput = {
   areaId: string;
   transactionId: string;
-  plataforma: "hotmart" | "kiwify";
+  /** Id do registro em `src/lib/checkout/platforms.ts`. */
+  plataforma: string;
   status: PurchaseStatus;
   userId: string | null;
   email: string | null;
@@ -110,7 +121,8 @@ const FreeText = z.string().nullable().optional();
 const PurchaseInputSchema = z.object({
   areaId: z.uuid(),
   transactionId: z.string().min(1).max(120),
-  plataforma: z.enum(["hotmart", "kiwify"]),
+  // A lista vem do registro de plataformas — mesma fonte do check do banco.
+  plataforma: z.enum(PLATFORM_IDS as [string, ...string[]]),
   status: z.enum([
     "approved",
     "pending",
@@ -258,10 +270,12 @@ export async function savePurchase(input: PurchaseInput): Promise<void> {
   const utm = clean.utm;
   const geo = clean.geo;
 
+  // Fallback final. `extractAdId` também desmonta valores compostos aqui —
+  // a rota já tentou os campos nativos com a preferência da plataforma.
   const adId =
     clean.adId ??
-    validAdId(clip(utm?.content, 512)) ??
-    validAdId(visitor?.utm_content ?? null);
+    extractAdId(clip(utm?.content, 512)) ??
+    extractAdId(visitor?.utm_content ?? null);
 
   const { error } = await admin.from("purchases").upsert(
     {

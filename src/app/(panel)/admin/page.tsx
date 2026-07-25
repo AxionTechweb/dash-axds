@@ -63,7 +63,7 @@ export default async function AdminPage() {
 
       <Card>
         <div className="border-b border-border p-4">
-          <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span className="micro-label">
             Usuários do painel
           </span>
         </div>
@@ -109,7 +109,7 @@ export default async function AdminPage() {
 
       <Card>
         <div className="border-b border-border p-4">
-          <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span className="micro-label">
             Áreas
           </span>
         </div>
@@ -134,7 +134,7 @@ export default async function AdminPage() {
 
       <Card>
         <div className="border-b border-border p-4">
-          <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span className="micro-label">
             Log de auditoria
           </span>
         </div>

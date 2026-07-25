@@ -254,7 +254,7 @@ export default async function CampanhasPage({
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Card>
           <div className="border-b border-border p-4">
-            <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="micro-label">
               Top 5 Anúncios (Last Click)
             </span>
           </div>
@@ -288,7 +288,7 @@ export default async function CampanhasPage({
 
         <Card>
           <div className="border-b border-border p-4">
-            <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="micro-label">
               Funil de Conversão
             </span>
           </div>

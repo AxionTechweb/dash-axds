@@ -149,7 +149,7 @@ export default async function DashboardPage({
         <Card className="xl:col-span-2">
           <div className="flex items-center gap-2 border-b border-border p-4">
             <Activity className="size-4 text-muted-foreground" />
-            <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="micro-label">
               Faturamento vs Gasto
             </span>
           </div>
@@ -161,7 +161,7 @@ export default async function DashboardPage({
         <Card>
           <div className="flex items-center gap-2 border-b border-border p-4">
             <Radio className="size-4 text-muted-foreground" />
-            <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="micro-label">
               Vendas em Tempo Real
             </span>
           </div>
@@ -175,7 +175,7 @@ export default async function DashboardPage({
         <Card className="xl:col-span-3">
           <div className="flex items-center gap-2 border-b border-border p-4">
             <Globe2 className="size-4 text-muted-foreground" />
-            <span className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="micro-label">
               Vendas por Região
             </span>
           </div>

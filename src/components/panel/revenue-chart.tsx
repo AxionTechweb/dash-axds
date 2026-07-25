@@ -16,11 +16,15 @@ import type { DailyPoint } from "@/lib/metrics";
 
 /**
  * Faturamento (dados próprios) vs Gasto com Ads (Meta).
- * Verde-neon para faturamento, âmbar para gasto — as duas cores de destaque
- * do design system, distinguíveis também por posição na legenda.
+ * Ciano para faturamento, roxo para gasto — o par de acentos da referência,
+ * distinguíveis também por posição na legenda.
+ *
+ * As cores saem das variáveis CSS em vez de valores fixos: assim o gráfico
+ * acompanha o tema claro/escuro E o override de cor do branding da instância,
+ * sem nada de marca preso no código.
  */
-const COLOR_REVENUE = "hsl(142 76% 58%)";
-const COLOR_SPEND = "hsl(38 92% 58%)";
+const COLOR_REVENUE = "hsl(var(--primary))";
+const COLOR_SPEND = "hsl(var(--accent-purple))";
 
 function shortDate(value: string): string {
   const [, month, day] = value.split("-");
@@ -78,12 +82,16 @@ export function RevenueChart({
             }
           />
           <Tooltip
+            cursor={{ stroke: "hsl(var(--foreground) / 0.15)" }}
             contentStyle={{
-              background: "hsl(222 20% 10%)",
-              border: "1px solid hsl(220 14% 20%)",
-              borderRadius: "0.5rem",
+              background: "hsl(var(--card))",
+              border: "1px solid hsl(var(--border))",
+              borderRadius: "0.75rem",
               fontSize: "0.78rem",
+              boxShadow: "0 20px 40px -12px rgb(0 0 0 / 0.6)",
             }}
+            labelStyle={{ color: "hsl(var(--muted-foreground))" }}
+            itemStyle={{ color: "hsl(var(--foreground))" }}
             labelFormatter={(label) =>
               typeof label === "string" ? shortDate(label) : String(label ?? "")
             }

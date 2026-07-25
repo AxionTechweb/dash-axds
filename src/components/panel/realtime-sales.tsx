@@ -27,43 +27,75 @@ export function RealtimeSales({
 
   useEffect(() => {
     const supabase = createClient();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
 
-    const channel = supabase
-      .channel(`purchases:${areaId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "purchases",
-          filter: `area_id=eq.${areaId}`,
-        },
-        (payload) => {
-          const row = payload.new as RecentSale & { status?: string };
-          if (row.status !== "approved") return;
+    /**
+     * O socket do Realtime precisa do JWT do usuário ANTES de assinar.
+     *
+     * `purchases` tem RLS e SELECT só para `authenticated`. Se o canal sobe
+     * antes de a sessão ser carregada, ele se autentica como `anon` e o
+     * servidor entrega ZERO eventos — sem erro, sem status ruim: o canal fica
+     * SUBSCRIBED e silencioso. Por isso pegamos a sessão primeiro.
+     */
+    async function connect() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled) return;
 
-          setSales((prev) =>
-            [
-              {
-                id: row.id,
-                produto: row.produto,
-                valor: row.valor,
-                created_at: row.created_at,
-              },
-              ...prev.filter((s) => s.id !== row.id),
-            ].slice(0, 12),
-          );
-        },
-      )
-      .subscribe((status) => {
-        // Fallback: sem Realtime, atualiza a rota periodicamente.
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          pollRef.current ??= setInterval(() => router.refresh(), 60_000);
-        }
-      });
+      if (session?.access_token) {
+        await supabase.realtime.setAuth(session.access_token);
+      }
+      if (cancelled) return;
+
+      channel = supabase
+        .channel(`purchases:${areaId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "purchases",
+            filter: `area_id=eq.${areaId}`,
+          },
+          (payload) => {
+            const row = payload.new as RecentSale & { status?: string };
+            if (row.status !== "approved") return;
+
+            setSales((prev) =>
+              [
+                {
+                  id: row.id,
+                  produto: row.produto,
+                  valor: row.valor,
+                  created_at: row.created_at,
+                },
+                ...prev.filter((s) => s.id !== row.id),
+              ].slice(0, 12),
+            );
+          },
+        )
+        .subscribe((status) => {
+          // Fallback: sem Realtime, atualiza a rota periodicamente.
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            pollRef.current ??= setInterval(() => router.refresh(), 60_000);
+          }
+        });
+    }
+
+    void connect();
+
+    // O access_token expira; sem renovar no socket o canal emudece depois de
+    // um tempo. Reaplicamos a cada refresh de sessão.
+    const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.access_token) void supabase.realtime.setAuth(session.access_token);
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      cancelled = true;
+      authSub.subscription.unsubscribe();
+      if (channel) supabase.removeChannel(channel);
       if (pollRef.current) {
         clearInterval(pollRef.current);
         pollRef.current = null;
@@ -90,7 +122,7 @@ export function RealtimeSales({
           className="flex items-center justify-between gap-3 px-4 py-2.5"
         >
           <div className="min-w-0">
-            <p className="truncate text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="truncate micro-label">
               {sale.produto ?? "Produto"}
             </p>
             <p className="font-mono text-[0.7rem] text-muted-foreground/80">

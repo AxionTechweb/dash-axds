@@ -52,18 +52,21 @@ export function RegionBreakdown({
           .join(" · ");
 
         return (
-          <li key={`${row.country}-${row.region}`} className="px-4 py-3">
+          <li
+            key={`${row.country}-${row.region}`}
+            className="px-5 py-3.5 transition-colors hover:bg-[hsl(var(--foreground)/0.03)]"
+          >
             <div className="flex items-baseline justify-between gap-3">
-              <span className="truncate text-sm font-medium">
+              <span className="truncate text-sm font-medium tracking-tight">
                 {label || "Desconhecida"}
               </span>
-              <span className="shrink-0 font-mono text-xs text-muted-foreground tabular">
+              <span className="micro-label shrink-0">
                 {formatNumber(row.sales)} vendas · {formatPercent(share)}
               </span>
             </div>
 
-            <div className="mt-2 flex items-center gap-3">
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+            <div className="mt-2.5 flex items-center gap-3">
+              <div className="h-1 flex-1 overflow-hidden rounded-full bg-[hsl(var(--foreground)/0.08)]">
                 <div
                   className="fill-neon h-full rounded-full"
                   style={{ width: `${share}%` }}

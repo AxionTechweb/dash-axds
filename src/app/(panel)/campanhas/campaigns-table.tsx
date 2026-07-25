@@ -183,7 +183,7 @@ export function CampaignsTable({
                 <th
                   key={col.key}
                   className={cn(
-                    "whitespace-nowrap px-3 py-2 text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground",
+                    "whitespace-nowrap px-3 py-2 micro-label",
                     col.numeric && "text-right",
                   )}
                 >
@@ -207,7 +207,7 @@ export function CampaignsTable({
                 </th>
               ))}
               {canEdit ? (
-                <th className="px-3 py-2 text-right text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                <th className="px-3 py-2 text-right micro-label">
                   Ações
                 </th>
               ) : null}

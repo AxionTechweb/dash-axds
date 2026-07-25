@@ -1,67 +1,86 @@
 @import "tailwindcss";
 
 /* =============================================================================
-   Design system — tema ESCURO por padrão, com toggle claro.
+   Design system — referência "Finex" (tema escuro nativo).
+   Preto profundo (#020202), superfícies quase pretas, bordas em branco de baixa
+   opacidade, acento ciano, tipografia Plus Jakarta Sans + Oswald (display) e
+   rótulos em mono caixa-alta.
+
    Cores em HSL via variáveis CSS (formato "H S% L%", sem a função hsl()).
    A troca de tema é feita pelo atributo data-theme no <html>.
    A cor primária pode ser sobrescrita pelo branding da instância (white label)
-   injetando --primary inline no <html>.
+   injetando --primary inline no <html> — os defaults aqui são neutros.
    ============================================================================= */
 
 :root,
 :root[data-theme="dark"] {
-  --background: 222 24% 5%;
-  --foreground: 210 20% 96%;
+  /* Fundo #020202 e superfícies #050505 / #0A0A0A da referência */
+  --background: 0 0% 1%;
+  --foreground: 0 0% 100%;
 
-  --card: 222 20% 8%;
-  --card-foreground: 210 20% 96%;
+  --card: 0 0% 4%;
+  --card-foreground: 0 0% 100%;
 
-  --muted: 220 14% 14%;
-  --muted-foreground: 218 11% 62%;
+  /* zinc-900 / zinc-400 */
+  --muted: 240 6% 10%;
+  --muted-foreground: 240 5% 65%;
 
-  --border: 220 14% 16%;
-  --input: 220 14% 18%;
-  --ring: 142 76% 58%;
+  /* Equivalentes opacos de white/10 e white/14 sobre o fundo preto */
+  --border: 0 0% 11%;
+  --input: 0 0% 14%;
+  --ring: 187 92% 53%;
 
-  /* Primária: verde-neon */
-  --primary: 142 76% 58%;
-  --primary-foreground: 145 80% 6%;
+  /* Primária: ciano (cyan-400 #22d3ee) — sobrescritível pelo branding */
+  --primary: 187 92% 53%;
+  --primary-foreground: 0 0% 4%;
 
-  --accent-cyan: 187 85% 55%;
+  --accent-cyan: 187 92% 53%;
+  --accent-purple: 271 91% 65%;
+  --accent-emerald: 160 84% 39%;
   --accent-amber: 38 92% 58%;
-  --destructive: 0 72% 60%;
+  --destructive: 0 84% 60%;
 
-  --radius: 0.625rem;
+  /* Cantos: a referência mistura 2xl nos cards e xl nos itens de lista */
+  --radius: 0.75rem;
 
-  /* Camada "glass" dos cartões */
-  --glass-bg: 222 20% 10%;
-  --glass-opacity: 0.72;
+  /* Camada dos cartões: zinc-900/40 + backdrop-blur */
+  --glass-bg: 240 6% 10%;
+  --glass-opacity: 0.4;
+
+  /* Traços decorativos */
+  --hairline: 255 255 255;
+  --stripe-alpha: 0.015;
 }
 
 :root[data-theme="light"] {
-  --background: 210 30% 98%;
-  --foreground: 222 32% 12%;
+  --background: 0 0% 98%;
+  --foreground: 240 10% 4%;
 
   --card: 0 0% 100%;
-  --card-foreground: 222 32% 12%;
+  --card-foreground: 240 10% 4%;
 
-  --muted: 220 16% 94%;
-  --muted-foreground: 220 10% 42%;
+  --muted: 240 5% 96%;
+  --muted-foreground: 240 4% 46%;
 
-  --border: 220 16% 88%;
-  --input: 220 16% 86%;
-  --ring: 142 70% 26%;
+  --border: 240 6% 90%;
+  --input: 240 6% 88%;
+  --ring: 189 94% 33%;
 
-  /* Primária: verde escuro (contraste em fundo claro) */
-  --primary: 142 70% 26%;
+  /* Ciano escurecido para contraste em fundo claro */
+  --primary: 189 94% 33%;
   --primary-foreground: 0 0% 100%;
 
-  --accent-cyan: 190 90% 30%;
+  --accent-cyan: 189 94% 33%;
+  --accent-purple: 271 70% 48%;
+  --accent-emerald: 160 84% 28%;
   --accent-amber: 32 90% 40%;
-  --destructive: 0 70% 45%;
+  --destructive: 0 72% 45%;
 
   --glass-bg: 0 0% 100%;
-  --glass-opacity: 0.78;
+  --glass-opacity: 0.85;
+
+  --hairline: 0 0 0;
+  --stripe-alpha: 0.02;
 }
 
 /* Mapeia as variáveis para utilitários do Tailwind v4 (bg-card, text-primary...) */
@@ -78,6 +97,8 @@
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-cyan: hsl(var(--accent-cyan));
+  --color-purple: hsl(var(--accent-purple));
+  --color-emerald: hsl(var(--accent-emerald));
   --color-amber: hsl(var(--accent-amber));
   --color-destructive: hsl(var(--destructive));
 
@@ -85,8 +106,10 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
 
-  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-oswald), var(--font-jakarta), sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 }
 
@@ -107,9 +130,10 @@
     color: hsl(var(--foreground));
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Fundo escuro profundo: gradiente radial suave + textura sutil de ruído */
+  /* Glows ambientes: ciano no topo, roxo embaixo à direita (assinatura Finex) */
   body::before {
     content: "";
     position: fixed;
@@ -118,25 +142,31 @@
     pointer-events: none;
     background:
       radial-gradient(
-        60rem 40rem at 15% -10%,
-        hsl(var(--primary) / 0.09),
-        transparent 60%
+        50rem 32rem at 50% -8%,
+        hsl(var(--accent-cyan) / 0.06),
+        transparent 70%
       ),
       radial-gradient(
-        50rem 35rem at 95% 0%,
-        hsl(var(--accent-cyan) / 0.07),
-        transparent 55%
+        40rem 26rem at 100% 100%,
+        hsl(var(--accent-purple) / 0.05),
+        transparent 70%
       );
   }
 
+  /* Padrão diagonal sutil (.bg-stripes da referência), global e fixo */
   body::after {
     content: "";
     position: fixed;
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    opacity: 0.035;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-image: repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 40px,
+      rgb(var(--hairline) / var(--stripe-alpha)) 40px,
+      rgb(var(--hairline) / var(--stripe-alpha)) 41px
+    );
   }
 
   /* Números tabulares por padrão na fonte mono */
@@ -147,26 +177,147 @@
   }
 
   ::selection {
-    background: hsl(var(--primary) / 0.3);
+    background: hsl(var(--accent-purple) / 0.3);
   }
 }
 
 @layer components {
-  /* Cartão "glass" com leve blur */
+  /* ---------------------------------------------------------------------------
+     Cartão base. Na referência: bg-zinc-900/40 + backdrop-blur + border-white/5
+     + rounded-2xl, com a borda ganhando cor no hover.
+     --------------------------------------------------------------------------- */
   .glass {
     background-color: hsl(var(--glass-bg) / var(--glass-opacity));
-    backdrop-filter: blur(12px) saturate(140%);
-    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    backdrop-filter: blur(8px) saturate(140%);
+    -webkit-backdrop-filter: blur(8px) saturate(140%);
     border: 1px solid hsl(var(--border));
-    border-radius: var(--radius);
+    border-radius: var(--radius-2xl, 1rem);
+    transition:
+      border-color 0.3s,
+      background-color 0.3s;
   }
 
-  /* Preenchimento em gradiente verde-neon (barra de progresso da meta) */
+  /* Variante "sharp": bordas retas, usada nas grades divididas da referência */
+  .panel-sharp {
+    background-color: hsl(var(--card) / 0.6);
+    border: 1px solid hsl(var(--border));
+    border-radius: 0;
+  }
+
+  /* Rótulo micro em mono caixa-alta — a assinatura tipográfica do Finex */
+  .micro-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground) / 0.75);
+  }
+
+  /* Valor grande e leve, com numerais tabulares */
+  .stat-value {
+    font-weight: 300;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* Título display (Oswald), caixa-alta e bem apertado */
+  .display-title {
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: -0.025em;
+    line-height: 0.9;
+  }
+
+  /* Caixa de ícone tintada dos stat cards */
+  .icon-tile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+    background-color: hsl(var(--primary) / 0.1);
+    color: hsl(var(--primary));
+  }
+
+  /* Item de navegação/lista com caixa de ícone (sidebar da referência) */
+  .list-tile {
+    border: 1px solid transparent;
+    border-radius: var(--radius-lg);
+    transition:
+      background-color 0.2s,
+      border-color 0.2s,
+      color 0.2s;
+  }
+  .list-tile:hover {
+    background-color: hsl(var(--foreground) / 0.03);
+    border-color: hsl(var(--border));
+  }
+
+  /* Efeito "lanterna": brilho radial seguindo o mouse (flashlight-card) */
+  .flashlight {
+    position: relative;
+    --mouse-x: -999px;
+    --mouse-y: -999px;
+  }
+  .flashlight::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(
+      600px circle at var(--mouse-x) var(--mouse-y),
+      hsl(var(--foreground) / 0.06),
+      transparent 40%
+    );
+    opacity: 0;
+    transition: opacity 0.5s;
+    pointer-events: none;
+    z-index: 10;
+    mix-blend-mode: screen;
+  }
+  .flashlight:hover::after {
+    opacity: 1;
+  }
+
+  /* Preenchimento em gradiente da barra de meta */
   .fill-neon {
     background-image: linear-gradient(
       90deg,
-      hsl(var(--primary) / 0.55),
+      hsl(var(--primary) / 0.4),
       hsl(var(--primary))
+    );
+    box-shadow: 0 0 12px hsl(var(--primary) / 0.4);
+  }
+
+  /* Ponto de status pulsante com halo (header da referência) */
+  .status-dot {
+    position: relative;
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    background-color: hsl(var(--accent-emerald));
+  }
+  .status-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background-color: hsl(var(--accent-emerald));
+    filter: blur(2px);
+    opacity: 0.5;
+  }
+
+  /* Linha decorativa que some nas pontas */
+  .hairline-fade {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--foreground) / 0.12),
+      transparent
     );
   }
 
@@ -183,5 +334,14 @@
     filter: blur(7px);
     user-select: none;
     pointer-events: none;
+  }
+}
+
+/* Respeita quem pediu menos movimento */
+@media (prefers-reduced-motion: reduce) {
+  .glass,
+  .list-tile,
+  .flashlight::after {
+    transition: none;
   }
 }
