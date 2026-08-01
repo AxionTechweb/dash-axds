@@ -757,6 +757,28 @@ grant execute on function public.log_event(
 ) to service_role;
 
 -- ---------------------------------------------------------------------
+-- 20260801120000_add_payt_platform.sql
+-- ---------------------------------------------------------------------
+-- =============================================================================
+-- Adiciona a plataforma PayT ao checkout
+-- =============================================================================
+-- A lista espelha PLATFORM_IDS em src/lib/checkout/platforms.ts — os dois
+-- precisam andar juntos. Ver a entrada "payt" no registro para os detalhes
+-- do payload (confirmed: false — estrutura vista num payload real, mas ainda
+-- sem venda de teste rodada por esta instalação).
+-- =============================================================================
+
+alter table public.purchases
+  drop constraint if exists purchases_plataforma_check;
+
+alter table public.purchases
+  add constraint purchases_plataforma_check check (
+    plataforma in (
+      'hotmart', 'kiwify', 'kirvano', 'perfectpay', 'ticto', 'cakto', 'greenn', 'payt'
+    )
+  );
+
+-- ---------------------------------------------------------------------
 -- Histórico de migrations: faz um futuro `supabase db push` saber que
 -- estas já foram aplicadas, evitando reaplicar tudo por cima.
 -- ---------------------------------------------------------------------
@@ -774,7 +796,8 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260722120000', 'capture'),
   ('20260722130000', 'realtime'),
   ('20260722140000', 'checkout_platforms'),
-  ('20260725120000', 'function_grants_lockdown')
+  ('20260725120000', 'function_grants_lockdown'),
+  ('20260801120000', 'add_payt_platform')
 on conflict (version) do nothing;
 
 commit;

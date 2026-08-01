@@ -20,9 +20,9 @@ instância independente. Zero credencial, ID, domínio ou marca fixos no código
   **payload do webhook** — nada precisa ser instalado nas landing pages.
 - **Captura própria (opcional)**: snippet leve que gera um `user_id` anônimo, guarda
   UTMs e dispara `page_view` / `initiate_checkout`. Só acrescenta funil e eventos.
-- **Webhooks de compra**: 7 plataformas (Hotmart, Kiwify, Kirvano, Perfect Pay, Ticto,
-  Cakto, Greenn), validadas pelo mecanismo nativo de cada uma. Uma rota genérica dirigida
-  por um registro — adicionar plataforma não exige código novo.
+- **Webhooks de compra**: 8 plataformas (Hotmart, Kiwify, Kirvano, Perfect Pay, Ticto,
+  Cakto, Greenn, PayT), validadas pelo mecanismo nativo de cada uma. Uma rota genérica
+  dirigida por um registro — adicionar plataforma não exige código novo.
 - **Dashboard**: faturamento, gasto, lucro, ROAS, CPA, evolução, regiões e vendas em
   tempo real.
 - **Campanhas**: hierarquia da Meta com dois modos de atribuição e edição inline de
@@ -127,12 +127,12 @@ daquela plataforma aparecem: a URL do webhook pronta para copiar, o passo a pass
 parâmetro leva o `ad_id` e o campo do segredo (hottok / token / assinatura), que é
 cifrado antes de ir para o banco.
 
-Suportadas: **Hotmart, Kiwify, Kirvano, Perfect Pay, Ticto, Cakto, Greenn**.
+Suportadas: **Hotmart, Kiwify, Kirvano, Perfect Pay, Ticto, Cakto, Greenn, PayT**.
 
 > **Hotmart, Kiwify, Kirvano e Perfect Pay** têm o payload confirmado contra um envio
-> real. **Ticto, Cakto e Greenn** estão parciais (estrutura conhecida, mas com um ponto
-> em aberto — a interface avisa em cada uma). O `raw_webhook` é sempre salvo, então a
-> primeira venda real revela o que falta, e a correção é editar o registro em
+> real. **Ticto, Cakto, Greenn e PayT** estão parciais (estrutura conhecida, mas com um
+> ponto em aberto — a interface avisa em cada uma). O `raw_webhook` é sempre salvo, então
+> a primeira venda real revela o que falta, e a correção é editar o registro em
 > `src/lib/checkout/platforms.ts`, não escrever código.
 
 É pelo payload desse webhook que o painel lê o `ad_id`, as UTMs e o endereço do

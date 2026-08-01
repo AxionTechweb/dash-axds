@@ -580,6 +580,74 @@ export const CHECKOUT_PLATFORMS: CheckoutPlatform[] = [
     },
     statusMap: { ...COMMON_STATUS, SALEPAID: "approved", SALEREFUSED: "canceled" },
   },
+
+  /* ---------------------------------------------------------------- PAYT */
+  {
+    id: "payt",
+    label: "PayT",
+    confirmed: false,
+    // CONFIRMADO num payload real (venda não-teste, test:false): product.price
+    // 19700 = soma exata das comissões (638 + 19062) = R$ 197,00. Centavos.
+    // transaction.total_price (24444) inclui juros do parcelamento (12x) e NÃO
+    // é usado — infla o faturamento com dinheiro que vai para a maquininha/
+    // cartão, não para o vendedor.
+    amountInCents: true,
+    trackingParam: "utm_content",
+    // Confirmado pela doc oficial (help.payt.com.br/article/155-postback):
+    // "Sua chave de integração, serve para você poder validar se realmente o
+    // postback se origina do PayT" — mesmo desenho de segredo-no-corpo já
+    // usado por Perfect Pay/Ticto.
+    auth: { mode: "body-token", bodyPaths: ["integration_key"] },
+    // utm_content chega composto ("<nome-do-criativo>|<ad_id>"), confirmado
+    // num payload real: "...-h45b45|120249638140130720".
+    adIdSegment: "last",
+    secretLabel: "Chave de integração",
+    secretHint:
+      "Painel PayT (app.payt.com.br) → Produtos/Ofertas → Postbacks (ou Ferramentas → Integrações) → chave de integração da conta",
+    steps: [
+      "No painel da PayT (app.payt.com.br), abra Produtos/Ofertas → Postbacks (ou Ferramentas → Integrações).",
+      "Crie um postback para vendas avulsas e cole a URL mostrada acima.",
+      "Marque pelo menos os eventos Finalizada/Aprovada, Cancelada, Chargeback e Reembolsada.",
+      "Copie a chave de integração (integration_key) da sua conta e cole no campo abaixo.",
+      "No link do checkout, seu código externo deve enviar utm_content=<ad_id>.",
+    ],
+    caveats: [
+      'NÃO CONFIRMADO plenamente: só o status "paid" foi observado num payload real. Os demais (waiting_payment, refused, refunded, chargeback, expired, e os de assinatura/entrega física) vêm da documentação oficial da PayT, não de um payload — status desconhecido vira pending com segurança, nunca é descartado.',
+      "O valor usa product.price / transaction.price_without_installments (bate com a soma das comissões no exemplo real). transaction.total_price NÃO é usado de propósito: inclui juros do parcelamento.",
+      "A autenticação (integration_key no corpo) é confirmada pela documentação oficial da PayT, mas ainda não testada nesta instalação — confira que a 'Chave de integração' colada no painel é a mesma da sua conta PayT.",
+      "Sem campos de endereço (país/estado/cidade) no payload de exemplo — geo fica nulo, é esperado.",
+      'O rótulo exato dos menus no painel da PayT não foi verificado (a doc oficial não detalha telas) — procure por "Postback" nas configurações.',
+    ],
+    paths: {
+      transaction: ["transaction_id", "cart_id"],
+      // payment_status primeiro: para produtos físicos o `status` de topo pode
+      // virar "separation"/"shipped" (entrega) mesmo já pago — payment_status
+      // reflete só o pagamento.
+      status: ["transaction.payment_status", "status"],
+      value: ["product.price", "transaction.price_without_installments"],
+      email: ["customer.email"],
+      phone: ["customer.phone"],
+      product: ["product.name"],
+      adId: ["link.sources.utm_content"],
+      utmSource: ["link.sources.utm_source"],
+      utmMedium: ["link.sources.utm_medium"],
+      utmCampaign: ["link.sources.utm_campaign"],
+      utmTerm: ["link.sources.utm_term"],
+      utmContent: ["link.sources.utm_content"],
+    },
+    statusMap: {
+      ...COMMON_STATUS,
+      SEPARATION: "approved",
+      SHIPPED: "approved",
+      LOST_CART: "canceled",
+      SUBSCRIPTION_CANCELED: "canceled",
+      SUBSCRIPTION_RENEWED: "approved",
+      SUBSCRIPTION_REACTIVATED: "approved",
+      SUBSCRIPTION_LATE: "pending",
+      ORDER_FRUSTRATED: "canceled",
+      ORDER_CONFIRMED: "approved",
+    },
+  },
 ];
 
 /** Ids válidos — usado pelo zod, pelo check do banco e pela rota genérica. */

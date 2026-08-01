@@ -115,18 +115,23 @@ Tabelas: `areas`, `branding` (global, linha única), `settings` (1/área), `meta
 **Status interno de compra** (unificado): `approved`, `pending`, `refunded`, `chargeback`,
 `canceled`.
 
-**Plataformas de checkout** (7): `hotmart`, `kiwify`, `kirvano`, `perfectpay`, `ticto`,
-`cakto`, `greenn`. A lista vive em `src/lib/checkout/platforms.ts` (`PLATFORM_IDS`) e é
-espelhada no check de `purchases.plataforma` — **os dois precisam andar juntos**.
+**Plataformas de checkout** (8): `hotmart`, `kiwify`, `kirvano`, `perfectpay`, `ticto`,
+`cakto`, `greenn`, `payt`. A lista vive em `src/lib/checkout/platforms.ts`
+(`PLATFORM_IDS`) e é espelhada no check de `purchases.plataforma` — **os dois precisam
+andar juntos**.
 
 **Confirmadas com payload real** (`confirmed: true`): `hotmart`, `kiwify`, `kirvano`,
 `perfectpay`. **Parciais** (`confirmed: false`, estrutura conhecida mas com um ponto em
 aberto): `ticto` (ad_id não visto num payload com anúncio), `cakto` (exemplo era uma
-lista de API, envelope do webhook incerto), `greenn` (header de auth não verificado).
-O registro guarda por plataforma: `amountInCents` (Kiwify e Ticto = centavos; resto =
-reais), `adIdSegment` (desmonte de campo composto tipo `sck`/`utm_perfect`),
-`placeholders` (a Ticto manda `"Não Informado"`), `metaArray` (a Greenn manda o rastreio
-num array `saleMetas`). O parser de moeda (`parseMoney`) lê `"R$ 169,80"` da Kirvano.
+lista de API, envelope do webhook incerto), `greenn` (header de auth não verificado),
+`payt` (payload real recebido e auth confirmada pela doc oficial — `integration_key` no
+corpo —, mas só o status `paid` foi observado; os demais status vêm da documentação, não
+de um payload, e a autenticação ainda não foi testada por um webhook de verdade nesta
+instalação). O registro guarda por plataforma: `amountInCents` (Kiwify, Ticto e PayT =
+centavos; resto = reais), `adIdSegment` (desmonte de campo composto tipo
+`sck`/`utm_perfect`/`utm_content` da PayT), `placeholders` (a Ticto manda `"Não
+Informado"`), `metaArray` (a Greenn manda o rastreio num array `saleMetas`). O parser de
+moeda (`parseMoney`) lê `"R$ 169,80"` da Kirvano.
 
 Segredos de webhook ficam em `checkout_integrations` (PK `area_id`+`plataforma`,
 `secret` cifrado). Antes eram duas colunas em `settings` (`hotmart_hottok`,
@@ -225,11 +230,14 @@ migra os dados e remove as colunas.
 
 ### `confirmed` — o campo mais importante do registro
 `confirmed: true` em **hotmart, kiwify, kirvano, perfectpay** (verificadas contra payload
-real). `false` em **ticto, cakto, greenn** — estrutura conhecida, mas com um ponto em
-aberto (ad_id sem exemplo com anúncio / envelope do webhook / header de auth). A UI avisa
-isso em cada uma. Quando a autenticação falha numa plataforma não confirmada, a rota
-registra no log os **nomes** dos headers recebidos (nunca os valores) para revelar qual
-delas a plataforma realmente usa.
+real). `false` em **ticto, cakto, greenn, payt** — estrutura conhecida, mas com um ponto
+em aberto (ad_id sem exemplo com anúncio / envelope do webhook / header de auth / status
+além de `paid` não observados). A UI avisa isso em cada uma. Quando a autenticação falha
+numa plataforma não confirmada, a rota registra no log os **nomes** dos headers
+recebidos (nunca os valores) para revelar qual delas a plataforma realmente usa — mas a
+PayT autentica pelo **corpo** (`integration_key`), não por header, então esse log não
+ajuda a diagnosticá-la; um 401 nela quer dizer que a chave colada no painel não bate com
+a da conta PayT.
 
 **Ao confirmar uma plataforma com venda real:** ajuste os caminhos no registro, vire
 `confirmed: true`, fixe `amountInCents` e remova as ressalvas resolvidas.
