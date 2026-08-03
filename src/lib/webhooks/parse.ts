@@ -177,6 +177,38 @@ export function normalizeCountry(value: string | null): string | null {
   return COUNTRY_NAMES[up] ?? null;
 }
 
+/**
+ * Rótulos conhecidos de método de pagamento, por plataforma (ex.: a PayT
+ * manda `credit_card`). Chave em MAIÚSCULO — a comparação normaliza antes de
+ * consultar, igual ao mapa de status.
+ */
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  CREDIT_CARD: "Cartão",
+  CREDITCARD: "Cartão",
+  DEBIT_CARD: "Cartão",
+  DEBITCARD: "Cartão",
+  CARTAO: "Cartão",
+  CARTAO_CREDITO: "Cartão",
+  CARD: "Cartão",
+  PIX: "PIX",
+  BOLETO: "Boleto",
+  BANK_SLIP: "Boleto",
+  PAYPAL: "PayPal",
+};
+
+/**
+ * Método de pagamento em rótulo legível ("Cartão", "PIX", "Boleto"...).
+ * Valor não reconhecido é devolvido como veio (capitalizado seria inventar
+ * dado) — melhor mostrar o texto cru da plataforma do que esconder a venda.
+ */
+export function normalizePaymentMethod(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const key = trimmed.toUpperCase().replace(/[\s-]+/g, "_");
+  return PAYMENT_METHOD_LABELS[key] ?? trimmed;
+}
+
 /** Comparação em tempo constante (tokens e assinaturas). */
 export function safeEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a);

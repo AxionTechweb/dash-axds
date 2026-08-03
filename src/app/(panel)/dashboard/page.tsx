@@ -1,26 +1,54 @@
 import {
   Activity,
+  BadgeCheck,
   BadgeDollarSign,
   Banknote,
+  CalendarDays,
+  Clock,
+  CreditCard,
+  Eye,
+  Filter,
   Globe2,
+  Landmark,
+  ListChecks,
   Megaphone,
+  MousePointer2,
+  MousePointerClick,
+  Package,
   Radio,
+  Receipt,
+  Share2,
   ShoppingBag,
+  ShoppingCart,
   Target,
   TrendingUp,
   TriangleAlert,
+  Undo2,
+  Users,
 } from "lucide-react";
 import type { Metadata } from "next";
 
+import { FunnelFlow } from "@/components/panel/funnel-flow";
 import { KpiCard } from "@/components/panel/kpi-card";
+import { OriginDonut } from "@/components/panel/origin-donut";
+import { PaymentMethodDonut } from "@/components/panel/payment-method-donut";
+import { ProductBreakdown } from "@/components/panel/product-breakdown";
 import { RealtimeSales } from "@/components/panel/realtime-sales";
 import { RegionBreakdown } from "@/components/panel/region-breakdown";
 import { RevenueChart } from "@/components/panel/revenue-chart";
+import { HourSalesChart, WeekdaySalesChart } from "@/components/panel/sales-timing-charts";
 import { Card } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
-import { formatCurrency, formatNumber, formatRoas } from "@/lib/format";
+import { getFunnelBase } from "@/lib/attribution";
+import { formatCurrency, formatNumber, formatPercent, formatRoas } from "@/lib/format";
 import { getAreaInsights } from "@/lib/meta/client";
-import { EMPTY_METRICS, getPurchaseMetrics, mergeDailySpend } from "@/lib/metrics";
+import { META_AD_TAX_RATE } from "@/lib/meta/config";
+import {
+  EMPTY_METRICS,
+  getPurchaseMetrics,
+  getSalesTiming,
+  mergeDailySpend,
+} from "@/lib/metrics";
 import { resolvePeriod } from "@/lib/period";
 import { DEFAULT_SETTINGS, getSettings } from "@/lib/settings";
 
@@ -50,25 +78,43 @@ export default async function DashboardPage({
     );
   }
 
-  // Dados próprios (Last Click) + mídia da Meta, em paralelo.
-  const [metrics, meta] = await Promise.all([
+  // Dados próprios (Last Click) + mídia da Meta + funil de captura, em paralelo.
+  const [metrics, meta, funnel, timing] = await Promise.all([
     getPurchaseMetrics(activeArea.id, period.from, period.to),
     getAreaInsights(activeArea.id, period.from, period.to),
+    getFunnelBase(activeArea.id, period.from, period.to),
+    getSalesTiming(activeArea.id, period.from, period.to),
   ]);
 
   const safeMetrics = metrics ?? EMPTY_METRICS;
 
   const revenue = safeMetrics.revenue;
   const adSpend = meta.insights.spend;
-  // Lucro = Faturamento − Gasto com Ads − Imposto (alíquota configurável).
+  // Lucro = Faturamento − Gasto com Ads − Imposto da Meta (sobre o gasto) −
+  // Imposto sobre faturamento (alíquota configurável).
+  const metaTax = adSpend * META_AD_TAX_RATE;
   const tax = revenue * (Number(taxRate) / 100);
-  const profit = revenue - adSpend - tax;
+  const profit = revenue - adSpend - metaTax - tax;
 
   const sales = safeMetrics.sales;
   const roas = adSpend > 0 ? revenue / adSpend : 0;
   const cpa = sales > 0 ? adSpend / sales : 0;
+  const ticketMedio = sales > 0 ? revenue / sales : 0;
+
+  const impressions = meta.insights.impressions;
+  const clicks = meta.insights.clicks;
+  const cpm = impressions > 0 ? (adSpend / impressions) * 1000 : 0;
+  const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+  const cpc = clicks > 0 ? adSpend / clicks : 0;
+  const cpv = funnel.views > 0 ? adSpend / funnel.views : 0;
+  const cpi = funnel.checkouts > 0 ? adSpend / funnel.checkouts : 0;
 
   const daily = mergeDailySpend(safeMetrics.daily, meta.dailySpend);
+  // Séries diárias para as sparklines dos cards — cada métrica na sua
+  // própria escala, em vez de forçar Vendas/ROAS/CPA num único gráfico.
+  const salesSeries = daily.map((d) => d.sales);
+  const roasSeries = daily.map((d) => (d.spend > 0 ? d.revenue / d.spend : 0));
+  const cpaSeries = daily.map((d) => (d.sales > 0 ? d.spend / d.sales : 0));
 
   return (
     <div className="space-y-4">
@@ -117,31 +163,185 @@ export default async function DashboardPage({
           label="Gasto com Ads"
           value={formatCurrency(adSpend, currency)}
           icon={Megaphone}
-          sub={`Ads ${formatCurrency(adSpend, currency)} · Imposto ${formatNumber(Number(taxRate))}% (${formatCurrency(tax, currency)})`}
+          sub={`+ Imposto Meta ${formatCurrency(metaTax, currency)} (${formatPercent(META_AD_TAX_RATE * 100)})`}
         />
         <KpiCard
           label="Lucro"
           value={formatCurrency(profit, currency)}
           icon={TrendingUp}
           accent={profit < 0 ? "destructive" : "primary"}
+          sub={`Ads ${formatCurrency(adSpend, currency)} · Imposto Meta ${formatCurrency(metaTax, currency)} · Imposto ${formatNumber(Number(taxRate))}% (${formatCurrency(tax, currency)})`}
         />
         <KpiCard
           label="Vendas Aprovadas"
           value={formatNumber(sales)}
           icon={ShoppingBag}
           sensitive={false}
+          series={salesSeries}
         />
         <KpiCard
           label="ROAS"
           value={formatRoas(roas)}
           icon={Target}
           accent={roas > 0 && roas < 1 ? "destructive" : "primary"}
+          series={roasSeries}
         />
         <KpiCard
           label="CPA"
           value={formatCurrency(cpa, currency)}
           icon={BadgeDollarSign}
+          series={cpaSeries}
         />
+      </div>
+
+      {/* Funil de fluxo: cliques no anúncio → visita → checkout → compra */}
+      <Card>
+        <div className="flex items-center gap-2 border-b border-border p-4">
+          <Filter className="size-4 text-muted-foreground" />
+          <span className="micro-label">Funil de Fluxo</span>
+        </div>
+        <FunnelFlow
+          clicks={clicks}
+          views={funnel.views}
+          checkouts={funnel.checkouts}
+          purchases={sales}
+        />
+      </Card>
+
+      {/* Receita: recorte adicional sobre as vendas do período */}
+      <div className="space-y-2">
+        <span className="micro-label">Receita</span>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <KpiCard
+            label="Ticket Médio"
+            value={formatCurrency(ticketMedio, currency)}
+            icon={Receipt}
+          />
+          <KpiCard
+            label="Vendas Totais"
+            value={formatNumber(sales)}
+            icon={ShoppingCart}
+            sensitive={false}
+          />
+          <KpiCard
+            label="Vendas Únicas"
+            value={formatNumber(safeMetrics.uniqueSales)}
+            icon={Users}
+            sensitive={false}
+            sub="Clientes distintos, por e-mail"
+          />
+          <KpiCard
+            label="Reembolsos"
+            value={formatCurrency(safeMetrics.refundedValue, currency)}
+            icon={Undo2}
+            accent="destructive"
+            sub={`${formatNumber(safeMetrics.refundedCount)} reembolso${safeMetrics.refundedCount === 1 ? "" : "s"}`}
+          />
+          <KpiCard
+            label="Imposto Meta"
+            value={formatCurrency(metaTax, currency)}
+            icon={Landmark}
+            accent="destructive"
+            sub={`${formatPercent(META_AD_TAX_RATE * 100)} do gasto com Ads`}
+          />
+        </div>
+      </div>
+
+      {/* Meta Ads: custo por resultado, além do gasto total já mostrado acima */}
+      <div className="space-y-2">
+        <span className="micro-label">Meta Ads · Custo & Tráfego</span>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <KpiCard
+            label="CPM"
+            value={formatCurrency(cpm, currency)}
+            icon={Eye}
+            sub="Custo por mil impressões"
+          />
+          <KpiCard
+            label="CTR"
+            value={formatPercent(ctr)}
+            icon={MousePointerClick}
+            sensitive={false}
+          />
+          <KpiCard
+            label="CPC"
+            value={formatCurrency(cpc, currency)}
+            icon={MousePointer2}
+          />
+          <KpiCard
+            label="CPV"
+            value={formatCurrency(cpv, currency)}
+            icon={Globe2}
+            sub={
+              funnel.views > 0
+                ? "Custo por visita à landing page"
+                : "Sem dados — requer o snippet de captura (opcional)"
+            }
+          />
+          <KpiCard
+            label="CPI"
+            value={formatCurrency(cpi, currency)}
+            icon={ListChecks}
+            sub={
+              funnel.checkouts > 0
+                ? "Custo por checkout iniciado"
+                : "Sem dados — requer o snippet de captura (opcional)"
+            }
+          />
+          <KpiCard
+            label="Compras FB"
+            value={formatNumber(meta.insights.metaPurchases)}
+            icon={BadgeCheck}
+            sensitive={false}
+            sub="Conversões reportadas pela própria Meta"
+          />
+        </div>
+      </div>
+
+      {/* Vendas por dia da semana e por horário (fuso de Brasília) */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <Card>
+          <div className="flex items-center gap-2 border-b border-border p-4">
+            <CalendarDays className="size-4 text-muted-foreground" />
+            <span className="micro-label">Vendas por Dia da Semana</span>
+          </div>
+          <WeekdaySalesChart data={timing.weekday} />
+        </Card>
+
+        <Card>
+          <div className="flex items-center gap-2 border-b border-border p-4">
+            <Clock className="size-4 text-muted-foreground" />
+            <span className="micro-label">Vendas por Horário</span>
+          </div>
+          <HourSalesChart data={timing.hour} />
+        </Card>
+      </div>
+
+      {/* Vendas por produto, forma de pagamento e origem (pago vs orgânico) */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <Card>
+          <div className="flex items-center gap-2 border-b border-border p-4">
+            <Package className="size-4 text-muted-foreground" />
+            <span className="micro-label">Vendas por Produto</span>
+          </div>
+          <ProductBreakdown products={safeMetrics.products} currency={currency} />
+        </Card>
+
+        <Card>
+          <div className="flex items-center gap-2 border-b border-border p-4">
+            <CreditCard className="size-4 text-muted-foreground" />
+            <span className="micro-label">Vendas por Pagamento</span>
+          </div>
+          <PaymentMethodDonut methods={safeMetrics.paymentMethods} />
+        </Card>
+
+        <Card>
+          <div className="flex items-center gap-2 border-b border-border p-4">
+            <Share2 className="size-4 text-muted-foreground" />
+            <span className="micro-label">Vendas por Origem</span>
+          </div>
+          <OriginDonut origin={safeMetrics.origin} />
+        </Card>
       </div>
 
       {/* Gráfico + feed em tempo real */}

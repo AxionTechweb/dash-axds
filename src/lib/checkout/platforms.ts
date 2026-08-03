@@ -54,6 +54,8 @@ export type PlatformPaths = {
   email: string[];
   phone?: string[];
   product?: string[];
+  /** Cartão, PIX, boleto... texto cru da plataforma (normalizado na rota). */
+  paymentMethod?: string[];
   /** Rastreio: onde o ad_id pode chegar. */
   adId: string[];
   /** Identificador do visitante (só útil com captura própria). */
@@ -628,6 +630,8 @@ export const CHECKOUT_PLATFORMS: CheckoutPlatform[] = [
       email: ["customer.email"],
       phone: ["customer.phone"],
       product: ["product.name"],
+      // Confirmado num payload real: "credit_card".
+      paymentMethod: ["transaction.payment_method"],
       adId: ["link.sources.utm_content"],
       utmSource: ["link.sources.utm_source"],
       utmMedium: ["link.sources.utm_medium"],

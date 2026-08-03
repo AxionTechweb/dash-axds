@@ -779,6 +779,20 @@ alter table public.purchases
   );
 
 -- ---------------------------------------------------------------------
+-- 20260803120000_purchase_payment_method.sql
+-- ---------------------------------------------------------------------
+-- =============================================================================
+-- Adiciona payment_method em purchases
+-- =============================================================================
+-- Método de pagamento da venda (cartão, PIX, boleto...), quando a plataforma
+-- de checkout manda esse campo no webhook. Alimenta o recorte "Vendas por
+-- Pagamento" do Dashboard. Nulo quando a plataforma não informa — não é erro.
+-- =============================================================================
+
+alter table public.purchases
+  add column if not exists payment_method text;
+
+-- ---------------------------------------------------------------------
 -- Histórico de migrations: faz um futuro `supabase db push` saber que
 -- estas já foram aplicadas, evitando reaplicar tudo por cima.
 -- ---------------------------------------------------------------------
@@ -797,7 +811,8 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260722130000', 'realtime'),
   ('20260722140000', 'checkout_platforms'),
   ('20260725120000', 'function_grants_lockdown'),
-  ('20260801120000', 'add_payt_platform')
+  ('20260801120000', 'add_payt_platform'),
+  ('20260803120000', 'purchase_payment_method')
 on conflict (version) do nothing;
 
 commit;

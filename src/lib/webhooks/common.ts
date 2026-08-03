@@ -16,6 +16,7 @@ export {
   firstString,
   get,
   normalizeCountry,
+  normalizePaymentMethod,
   pickAdId,
   safeEqual,
   validAdId,
@@ -105,6 +106,8 @@ export type PurchaseInput = {
   produto: string | null;
   valor: number | null;
   moeda: string | null;
+  /** Já normalizado ("Cartão"/"PIX"/"Boleto"...) antes de chegar aqui. */
+  paymentMethod: string | null;
   adId: string | null;
   /**
    * Rastreio vindo do CHECKOUT. É a fonte principal quando não há captura
@@ -137,6 +140,7 @@ const PurchaseInputSchema = z.object({
   // Valores absurdos/NaN não entram (protege as métricas do painel).
   valor: z.number().finite().min(0).max(10_000_000).nullable(),
   moeda: z.string().max(8).nullable(),
+  paymentMethod: z.string().max(40).nullable(),
   adId: z.string().regex(/^\d{5,25}$/).nullable(),
   // UTM/GEO são metadados: entram como texto livre e são CLIPADOS mais abaixo
   // em vez de rejeitados. Descartar uma venda por causa de uma UTM comprida
@@ -287,6 +291,7 @@ export async function savePurchase(input: PurchaseInput): Promise<void> {
       produto: clean.produto,
       valor: clean.valor,
       moeda: clean.moeda,
+      payment_method: clip(clean.paymentMethod, 40),
       status: clean.status,
       plataforma: clean.plataforma,
       utm_source: clip(utm?.source, 255) ?? visitor?.utm_source ?? null,

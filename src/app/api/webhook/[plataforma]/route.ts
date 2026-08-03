@@ -13,6 +13,7 @@ import {
   firstString,
   get,
   normalizeCountry,
+  normalizePaymentMethod,
   pickAdId,
   resolveWebhookArea,
   safeEqual,
@@ -282,6 +283,7 @@ export async function POST(
       produto: pick(paths.product),
       valor: normalizeAmount(platform, firstNumber(source, paths.value)),
       moeda: pick(paths.currency),
+      paymentMethod: normalizePaymentMethod(pick(paths.paymentMethod)),
       adId,
       // raw_webhook = payload ORIGINAL (sem o _meta sintético).
       raw: payload,
