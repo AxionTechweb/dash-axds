@@ -22,6 +22,14 @@ export type MetaInsights = {
   /** Conversões que a Meta reporta (modo "Vendas na Meta"). */
   metaPurchases: number;
   metaRevenue: number;
+  /**
+   * Iniciar checkout e page view reportados pelo PIXEL/CAPI da própria Meta
+   * — funciona sem o snippet de captura próprio deste painel (que é
+   * opcional). Zero aqui significa que o pixel não está reportando essas
+   * ações, não necessariamente que não aconteceram.
+   */
+  initiateCheckout: number;
+  landingPageView: number;
 };
 
 export const EMPTY_INSIGHTS: MetaInsights = {
@@ -29,6 +37,8 @@ export const EMPTY_INSIGHTS: MetaInsights = {
   impressions: 0,
   clicks: 0,
   metaPurchases: 0,
+  initiateCheckout: 0,
+  landingPageView: 0,
   metaRevenue: 0,
 };
 
@@ -193,6 +203,8 @@ export async function getAreaInsights(
         totals.clicks += Number(r.clicks) || 0;
         totals.metaPurchases += sumActions(r.actions, "purchase");
         totals.metaRevenue += sumActions(r.action_values, "purchase");
+        totals.initiateCheckout += sumActions(r.actions, "initiate_checkout");
+        totals.landingPageView += sumActions(r.actions, "landing_page_view");
 
         // Com time_increment=1 cada linha traz date_start (YYYY-MM-DD).
         const day = typeof r.date_start === "string" ? r.date_start : null;

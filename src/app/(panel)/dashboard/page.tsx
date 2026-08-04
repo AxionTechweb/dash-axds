@@ -39,7 +39,6 @@ import { RevenueChart } from "@/components/panel/revenue-chart";
 import { HourSalesChart, WeekdaySalesChart } from "@/components/panel/sales-timing-charts";
 import { Card } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
-import { getFunnelBase } from "@/lib/attribution";
 import { formatCurrency, formatNumber, formatPercent, formatRoas } from "@/lib/format";
 import { getAreaInsights } from "@/lib/meta/client";
 import { META_AD_TAX_RATE } from "@/lib/meta/config";
@@ -78,11 +77,10 @@ export default async function DashboardPage({
     );
   }
 
-  // Dados próprios (Last Click) + mídia da Meta + funil de captura, em paralelo.
-  const [metrics, meta, funnel, timing] = await Promise.all([
+  // Dados próprios (Last Click) + mídia e funil (pixel) da Meta, em paralelo.
+  const [metrics, meta, timing] = await Promise.all([
     getPurchaseMetrics(activeArea.id, period.from, period.to),
     getAreaInsights(activeArea.id, period.from, period.to),
-    getFunnelBase(activeArea.id, period.from, period.to),
     getSalesTiming(activeArea.id, period.from, period.to),
   ]);
 
@@ -106,8 +104,16 @@ export default async function DashboardPage({
   const cpm = impressions > 0 ? (adSpend / impressions) * 1000 : 0;
   const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
   const cpc = clicks > 0 ? adSpend / clicks : 0;
-  const cpv = funnel.views > 0 ? adSpend / funnel.views : 0;
-  const cpi = funnel.checkouts > 0 ? adSpend / funnel.checkouts : 0;
+  // Views/checkouts vêm do pixel/CAPI da própria Meta — funciona sem o
+  // snippet de captura própria (que é opcional).
+  const cpv =
+    meta.insights.landingPageView > 0
+      ? adSpend / meta.insights.landingPageView
+      : 0;
+  const cpi =
+    meta.insights.initiateCheckout > 0
+      ? adSpend / meta.insights.initiateCheckout
+      : 0;
 
   const daily = mergeDailySpend(safeMetrics.daily, meta.dailySpend);
   // Séries diárias para as sparklines dos cards — cada métrica na sua
@@ -202,8 +208,8 @@ export default async function DashboardPage({
         </div>
         <FunnelFlow
           clicks={clicks}
-          views={funnel.views}
-          checkouts={funnel.checkouts}
+          views={meta.insights.landingPageView}
+          checkouts={meta.insights.initiateCheckout}
           purchases={sales}
         />
       </Card>
@@ -273,9 +279,9 @@ export default async function DashboardPage({
             value={formatCurrency(cpv, currency)}
             icon={Globe2}
             sub={
-              funnel.views > 0
-                ? "Custo por visita à landing page"
-                : "Sem dados — requer o snippet de captura (opcional)"
+              meta.insights.landingPageView > 0
+                ? "Custo por visita à landing page (pixel Meta)"
+                : "Sem page view reportado pelo pixel da Meta no período"
             }
           />
           <KpiCard
@@ -283,9 +289,9 @@ export default async function DashboardPage({
             value={formatCurrency(cpi, currency)}
             icon={ListChecks}
             sub={
-              funnel.checkouts > 0
-                ? "Custo por checkout iniciado"
-                : "Sem dados — requer o snippet de captura (opcional)"
+              meta.insights.initiateCheckout > 0
+                ? "Custo por checkout iniciado (pixel Meta)"
+                : "Sem checkout iniciado reportado pelo pixel da Meta no período"
             }
           />
           <KpiCard

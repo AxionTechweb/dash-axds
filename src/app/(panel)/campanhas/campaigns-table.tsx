@@ -43,6 +43,8 @@ export type TableRow = {
   sales: number;
   revenue: number;
   checkouts: number;
+  /** Page view reportado pelo pixel da Meta — usado só no funil, sem coluna própria. */
+  views: number;
   profit: number;
   roas: number;
   cpa: number;

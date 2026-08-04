@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import { Card } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
-import { getFunnelBase, getLastClickByAd } from "@/lib/attribution";
+import { getLastClickByAd } from "@/lib/attribution";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { getAccountOptions, getMetaEntities, type MetaLevel } from "@/lib/meta/campaigns";
 import { resolvePeriod } from "@/lib/period";
@@ -68,7 +68,7 @@ export default async function CampanhasPage({
   const currency = settings?.currency ?? DEFAULT_SETTINGS.currency;
   const taxRate = Number(settings?.tax_rate ?? DEFAULT_SETTINGS.tax_rate);
 
-  const [meta, lastClick, accounts, funnelBase] = await Promise.all([
+  const [meta, lastClick, accounts] = await Promise.all([
     getMetaEntities(
       activeArea.id,
       level,
@@ -78,7 +78,6 @@ export default async function CampanhasPage({
     ),
     getLastClickByAd(activeArea.id, period.from, period.to),
     getAccountOptions(activeArea.id),
-    getFunnelBase(activeArea.id, period.from, period.to),
   ]);
 
   // Monta as linhas conforme o MODO DE ATRIBUIÇÃO (nunca somando os dois).
@@ -89,11 +88,10 @@ export default async function CampanhasPage({
         if (row) {
           acc.sales += row.sales;
           acc.revenue += row.revenue;
-          acc.checkouts += row.checkouts;
         }
         return acc;
       },
-      { sales: 0, revenue: 0, checkouts: 0 },
+      { sales: 0, revenue: 0 },
     );
 
     const sales =
@@ -119,8 +117,10 @@ export default async function CampanhasPage({
       clicks: entity.clicks,
       sales,
       revenue,
-      // Checkouts vêm SEMPRE dos eventos próprios (a Meta não os reporta assim).
-      checkouts: own.checkouts,
+      // Checkouts e views vêm do pixel/CAPI da própria Meta — funciona sem
+      // o snippet de captura própria (que é opcional).
+      checkouts: entity.metaInitiateCheckout,
+      views: entity.metaLandingPageView,
       profit,
       roas: entity.spend > 0 ? revenue / entity.spend : 0,
       cpa: sales > 0 ? entity.spend / sales : 0,
@@ -165,11 +165,14 @@ export default async function CampanhasPage({
   const totalClicks = rows.reduce((sum, r) => sum + r.clicks, 0);
   const totalSales = rows.reduce((sum, r) => sum + r.sales, 0);
   const totalRevenue = rows.reduce((sum, r) => sum + r.revenue, 0);
+  const totalViews = rows.reduce((sum, r) => sum + r.views, 0);
+  const totalCheckouts = rows.reduce((sum, r) => sum + r.checkouts, 0);
 
-  // page_view e initiate_checkout só existem com o snippet opcional de captura
-  // própria. Sem ele, `events_log` fica vazio para sempre — mostrar as etapas
-  // zeradas faria o funil parecer quebrado. Só entram quando há dado real.
-  const hasOwnEvents = funnelBase.views > 0 || funnelBase.checkouts > 0;
+  // Views e checkouts vêm do pixel/CAPI da própria Meta — ficam em zero
+  // quando o pixel não reporta essas ações (não significa captura quebrada).
+  // O snippet de captura própria (events_log/getFunnelBase) segue disponível
+  // como fonte alternativa, mas não é mais o que preenche este funil.
+  const hasOwnEvents = totalViews > 0 || totalCheckouts > 0;
 
   return (
     <div className="space-y-4">
@@ -326,14 +329,14 @@ export default async function CampanhasPage({
                 <>
                   <FunnelStep
                     label="Views (page_view)"
-                    value={funnelBase.views}
+                    value={totalViews}
                     previous={totalClicks}
                     base={totalImpressions}
                   />
                   <FunnelStep
                     label="Checkouts iniciados"
-                    value={funnelBase.checkouts}
-                    previous={funnelBase.views}
+                    value={totalCheckouts}
+                    previous={totalViews}
                     base={totalImpressions}
                   />
                 </>
@@ -345,7 +348,7 @@ export default async function CampanhasPage({
                     : "Vendas aprovadas (Last Click)"
                 }
                 value={totalSales}
-                previous={hasOwnEvents ? funnelBase.checkouts : totalClicks}
+                previous={hasOwnEvents ? totalCheckouts : totalClicks}
                 base={totalImpressions}
               />
 
@@ -374,9 +377,10 @@ export default async function CampanhasPage({
                 </p>
                 {!hasOwnEvents ? (
                   <p className="pt-1">
-                    Views e checkouts iniciados dependem do snippet de captura
-                    própria, que é opcional e não está em uso. A atribuição por
-                    anúncio não precisa dele.
+                    Views e checkouts iniciados vêm do pixel/CAPI da própria
+                    Meta — zerados aqui significa que o pixel não está
+                    reportando essas ações no período, não que a captura está
+                    quebrada. A atribuição por anúncio não depende disso.
                   </p>
                 ) : null}
               </div>

@@ -37,6 +37,9 @@ export type MetaEntity = {
   clicks: number;
   metaPurchases: number;
   metaRevenue: number;
+  /** Iniciar checkout / page view reportados pelo pixel da própria Meta. */
+  metaInitiateCheckout: number;
+  metaLandingPageView: number;
   /** ad_ids que compõem a linha — base da atribuição Last Click. */
   adIds: string[];
 };
@@ -203,6 +206,8 @@ export async function getMetaEntities(
         clicks: 0,
         metaPurchases: 0,
         metaRevenue: 0,
+        metaInitiateCheckout: 0,
+        metaLandingPageView: 0,
         adIds: [] as string[],
       };
 
@@ -211,6 +216,8 @@ export async function getMetaEntities(
       entry.clicks += Number(row.clicks) || 0;
       entry.metaPurchases += sumActions(row.actions, "purchase");
       entry.metaRevenue += sumActions(row.action_values, "purchase");
+      entry.metaInitiateCheckout += sumActions(row.actions, "initiate_checkout");
+      entry.metaLandingPageView += sumActions(row.actions, "landing_page_view");
 
       const adId = row.ad_id;
       if (typeof adId === "string" && !entry.adIds.includes(adId)) {
@@ -231,6 +238,8 @@ export async function getMetaEntities(
         clicks: 0,
         metaPurchases: 0,
         metaRevenue: 0,
+        metaInitiateCheckout: 0,
+        metaLandingPageView: 0,
         adIds: level === "ad" ? [id] : [],
       };
 
