@@ -36,11 +36,17 @@ export function SettingsForm({
   taxRate,
   revenueGoal,
   allowedOrigins,
+  gatewayFeePct,
+  gatewayFeeFixed,
+  breakEvenValue,
 }: {
   currency: string;
   taxRate: number;
   revenueGoal: number;
   allowedOrigins: string[];
+  gatewayFeePct: number;
+  gatewayFeeFixed: number;
+  breakEvenValue: number;
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     saveSettings,
@@ -83,6 +89,49 @@ export function SettingsForm({
             min="0"
             defaultValue={revenueGoal}
             required
+          />
+        </div>
+      </div>
+
+      {/*
+        Taxas do relatório semanal (Meta + Vturb + checkout, Google Sheets):
+        entram na margem líquida de cada criativo. O imposto sobre o gasto de
+        mídia já é uma constante do código (META_AD_TAX_RATE) — só o que
+        varia por instância fica aqui.
+      */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div>
+          <Label htmlFor="gateway_fee_pct">Taxa do gateway (%)</Label>
+          <Input
+            id="gateway_fee_pct"
+            name="gateway_fee_pct"
+            type="number"
+            step="0.01"
+            min="0"
+            max="100"
+            defaultValue={gatewayFeePct}
+          />
+        </div>
+        <div>
+          <Label htmlFor="gateway_fee_fixed">Taxa fixa do gateway</Label>
+          <Input
+            id="gateway_fee_fixed"
+            name="gateway_fee_fixed"
+            type="number"
+            step="0.01"
+            min="0"
+            defaultValue={gatewayFeeFixed}
+          />
+        </div>
+        <div>
+          <Label htmlFor="break_even_value">Break-even de referência</Label>
+          <Input
+            id="break_even_value"
+            name="break_even_value"
+            type="number"
+            step="0.01"
+            min="0"
+            defaultValue={breakEvenValue}
           />
         </div>
       </div>

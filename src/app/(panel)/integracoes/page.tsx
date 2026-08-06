@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 
 import { CheckoutConnect } from "./checkout-connect";
 import { MetaConnect, type AccountRow } from "./meta-connect";
+import { SheetsConnect } from "./sheets-connect";
+import { VturbConnect, type VturbPlayerRow } from "./vturb-connect";
 
 export const metadata: Metadata = { title: "Integrações" };
 export const dynamic = "force-dynamic";
@@ -38,23 +40,38 @@ export default async function IntegracoesPage() {
   const supabase = await createClient();
   const baseUrl = await getBaseUrl();
 
-  const [{ data: accountsData }, { data: areaRow }, { data: integrations }] =
-    await Promise.all([
-      supabase
-        .from("meta_ad_accounts")
-        .select("id, label, ad_account_id, ads_token")
-        .eq("area_id", activeArea.id)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("areas")
-        .select("public_token")
-        .eq("id", activeArea.id)
-        .maybeSingle(),
-      supabase
-        .from("checkout_integrations")
-        .select("plataforma, secret, enabled")
-        .eq("area_id", activeArea.id),
-    ]);
+  const [
+    { data: accountsData },
+    { data: areaRow },
+    { data: integrations },
+    { data: vturbPlayersData },
+    { data: sheetsRow },
+  ] = await Promise.all([
+    supabase
+      .from("meta_ad_accounts")
+      .select("id, label, ad_account_id, ads_token")
+      .eq("area_id", activeArea.id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("areas")
+      .select("public_token")
+      .eq("id", activeArea.id)
+      .maybeSingle(),
+    supabase
+      .from("checkout_integrations")
+      .select("plataforma, secret, enabled")
+      .eq("area_id", activeArea.id),
+    supabase
+      .from("vturb_players")
+      .select("id, player_id, label")
+      .eq("area_id", activeArea.id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("google_sheets_integrations")
+      .select("spreadsheet_id, service_account_json, template_tab_name, enabled")
+      .eq("area_id", activeArea.id)
+      .maybeSingle(),
+  ]);
 
   const accounts: AccountRow[] = (accountsData ?? []).map((row) => ({
     id: row.id as string,
@@ -70,8 +87,17 @@ export default async function IntegracoesPage() {
     .filter((row) => row.secret && row.enabled !== false)
     .map((row) => row.plataforma as string);
 
+  const vturbPlayers: VturbPlayerRow[] = (vturbPlayersData ?? []).map((row) => ({
+    id: row.id as string,
+    playerId: row.player_id as string,
+    label: row.label as string,
+  }));
+
+  const sheetsOn = Boolean(sheetsRow?.service_account_json && sheetsRow?.enabled !== false);
+
   const metaOn = accounts.some((a) => a.hasToken);
   const checkoutOn = configured.length > 0;
+  const vturbOn = vturbPlayers.length > 0;
 
   const connectedLabels = configured
     .map((id) => getPlatform(id)?.label ?? id)
@@ -89,6 +115,18 @@ export default async function IntegracoesPage() {
         ? `Checkout conectado · ${connectedLabels}`
         : "Conectar a plataforma de checkout",
       done: checkoutOn,
+    },
+    {
+      label: vturbOn
+        ? `Vturb conectada · ${vturbPlayers.length} vídeo(s)`
+        : "Conectar a Vturb (opcional, pro relatório semanal)",
+      done: vturbOn,
+    },
+    {
+      label: sheetsOn
+        ? "Google Sheets conectado · relatório semanal"
+        : "Conectar o Google Sheets (opcional, pro relatório semanal)",
+      done: sheetsOn,
     },
   ];
 
@@ -145,6 +183,28 @@ export default async function IntegracoesPage() {
           baseUrl={baseUrl}
           publicToken={publicToken}
           configured={configured}
+        />
+      </Card>
+
+      {/* 3 — Vturb (opcional) */}
+      <Card>
+        <CardHeader>
+          <CardLabel>Vturb</CardLabel>
+          <span className="micro-label">métricas de VSL · relatório semanal</span>
+        </CardHeader>
+        <VturbConnect players={vturbPlayers} />
+      </Card>
+
+      {/* 4 — Google Sheets (opcional) */}
+      <Card>
+        <CardHeader>
+          <CardLabel>Google Sheets</CardLabel>
+          <span className="micro-label">destino do relatório semanal</span>
+        </CardHeader>
+        <SheetsConnect
+          connected={sheetsOn}
+          spreadsheetId={(sheetsRow?.spreadsheet_id as string) ?? null}
+          templateTabName={(sheetsRow?.template_tab_name as string) ?? "TEMPLATE"}
         />
       </Card>
     </div>

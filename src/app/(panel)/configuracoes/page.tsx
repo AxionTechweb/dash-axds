@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 
 import { AreasManager } from "./areas-manager";
 import { BrandingForm } from "./branding-form";
+import { ProductTiersManager } from "./product-tiers-manager";
 
 export const metadata: Metadata = { title: "Configurações" };
 export const dynamic = "force-dynamic";
@@ -23,13 +24,37 @@ export default async function ConfiguracoesPage() {
   ]);
 
   const supabase = await createClient();
-  const { data: settings } = activeArea
-    ? await supabase
-        .from("settings")
-        .select("currency, tax_rate, revenue_goal, allowed_origins")
-        .eq("area_id", activeArea.id)
-        .maybeSingle()
-    : { data: null };
+  const [{ data: settings }, { data: productRows }, { data: tierRows }] =
+    activeArea
+      ? await Promise.all([
+          supabase
+            .from("settings")
+            .select(
+              "currency, tax_rate, revenue_goal, allowed_origins, gateway_fee_pct, gateway_fee_fixed, break_even_value",
+            )
+            .eq("area_id", activeArea.id)
+            .maybeSingle(),
+          supabase
+            .from("purchases")
+            .select("produto")
+            .eq("area_id", activeArea.id)
+            .not("produto", "is", null)
+            .limit(5_000),
+          supabase
+            .from("product_tiers")
+            .select("produto, tier")
+            .eq("area_id", activeArea.id),
+        ])
+      : [{ data: null }, { data: null }, { data: null }];
+
+  // Produtos distintos vistos nas vendas, cada um com o tier já salvo (ou
+  // "outro" por padrão) — fonte da tela de classificação abaixo.
+  const tierByProduct = new Map(
+    (tierRows ?? []).map((row) => [row.produto as string, row.tier as string]),
+  );
+  const products = [...new Set((productRows ?? []).map((row) => row.produto as string))]
+    .sort((a, b) => a.localeCompare(b, "pt-BR"))
+    .map((produto) => ({ produto, tier: tierByProduct.get(produto) ?? "outro" }));
 
   return (
     <div className="space-y-6">
@@ -97,6 +122,9 @@ export default async function ConfiguracoesPage() {
                 settings?.revenue_goal ?? DEFAULT_SETTINGS.revenue_goal,
               )}
               allowedOrigins={(settings?.allowed_origins as string[]) ?? []}
+              gatewayFeePct={Number(settings?.gateway_fee_pct ?? 0)}
+              gatewayFeeFixed={Number(settings?.gateway_fee_fixed ?? 0)}
+              breakEvenValue={Number(settings?.break_even_value ?? 0)}
             />
           ) : (
             <p className="p-5 text-sm text-muted-foreground">
@@ -105,6 +133,27 @@ export default async function ConfiguracoesPage() {
           )}
         </Card>
       </div>
+
+      {activeArea && products.length > 0 ? (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">
+              Tiers de produto
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Classifica cada produto vendido como VD, Upsell ou Downsell — usado
+              para quebrar a receita por tier no relatório semanal (Vturb +
+              Google Sheets, em Integrações). Produto não classificado fica em
+              &quot;Outro&quot; e continua entrando no total, só não some
+              separado.
+            </p>
+          </div>
+
+          <Card className="p-4">
+            <ProductTiersManager products={products} />
+          </Card>
+        </div>
+      ) : null}
     </div>
   );
 }
