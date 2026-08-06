@@ -2,7 +2,7 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import { getSheetsIntegration, type SheetsIntegration } from "./client";
+import { ensureTabFromTemplate, getSheetsIntegration } from "./client";
 
 /**
  * Escreve o relatório semanal numa aba NOVA da planilha (uma por semana),
@@ -300,45 +300,6 @@ function totalsValue(
   }
 }
 
-/** Garante a aba da semana: reusa se já existe, senão duplica o TEMPLATE. */
-async function ensureWeekTab(
-  integration: SheetsIntegration,
-  tabName: string,
-): Promise<void> {
-  const meta = await integration.sheets.spreadsheets.get({
-    spreadsheetId: integration.spreadsheetId,
-    fields: "sheets.properties",
-  });
-
-  const sheetsList = meta.data.sheets ?? [];
-  const alreadyExists = sheetsList.some((s) => s.properties?.title === tabName);
-  if (alreadyExists) return; // reprocessamento — só sobrescreve os valores.
-
-  const template = sheetsList.find(
-    (s) => s.properties?.title === integration.templateTabName,
-  );
-  const templateSheetId = template?.properties?.sheetId;
-  if (templateSheetId === undefined || templateSheetId === null) {
-    throw new Error(
-      `Aba modelo "${integration.templateTabName}" não encontrada na planilha.`,
-    );
-  }
-
-  await integration.sheets.spreadsheets.batchUpdate({
-    spreadsheetId: integration.spreadsheetId,
-    requestBody: {
-      requests: [
-        {
-          duplicateSheet: {
-            sourceSheetId: templateSheetId,
-            newSheetName: tabName,
-          },
-        },
-      ],
-    },
-  });
-}
-
 export async function writeWeeklyReportToSheet(
   areaId: string,
   weekStartYmd: string,
@@ -359,7 +320,7 @@ export async function writeWeeklyReportToSheet(
   }
 
   try {
-    await ensureWeekTab(integration, tabName);
+    await ensureTabFromTemplate(integration, tabName);
 
     // Lê as primeiras linhas da aba TEMPLATE (não da aba nova — o conteúdo é
     // o mesmo, mas o template não muda de semana pra semana) pra achar o

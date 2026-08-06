@@ -66,6 +66,43 @@ function brtStartOfDayUtc(ymd: string): Date {
   return new Date(`${ymd}T03:00:00.000Z`);
 }
 
+/** Hora atual (0–23) no fuso de Brasília. */
+function brtHour(d: Date): number {
+  const hourStr = d.toLocaleString("en-US", {
+    timeZone: BRT_TZ,
+    hour: "2-digit",
+    hour12: false,
+  });
+  // Alguns motores ICU devolvem "24" para meia-noite em vez de "00".
+  return Number(hourStr.replace(/\D/g, "")) % 24;
+}
+
+export type CheckpointDayRange = {
+  dayStart: Date;
+  dayYmd: string;
+  hour: number;
+};
+
+/**
+ * Dia BRT "alvo" de um checkpoint intradia (acompanhamento diário por
+ * campanha), dado o instante em que ele roda. À meia-noite (hour=0) o
+ * checkpoint fecha o dia que ACABOU — o dia alvo é ontem, não hoje, mesmo
+ * raciocínio de "TOTAL = valor do 00:00 (último registro do dia)" da
+ * planilha de referência.
+ */
+export function getCheckpointDayRange(reference: Date = new Date()): CheckpointDayRange {
+  const hour = brtHour(reference);
+
+  let dayYmd = brtYmd(reference);
+  if (hour === 0) {
+    const yesterday = new Date(reference);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    dayYmd = brtYmd(yesterday);
+  }
+
+  return { dayStart: brtStartOfDayUtc(dayYmd), dayYmd, hour };
+}
+
 export type WeekRange = {
   weekStart: Date;
   weekEnd: Date;

@@ -69,6 +69,84 @@ export async function getSheetsIntegration(
 }
 
 /**
+ * Credencial + cliente Sheets da 2ª planilha (checkpoints diários por
+ * campanha) — tabela separada (`daily_campaign_sheets`), pode ser uma
+ * planilha e credencial diferentes das do relatório semanal.
+ */
+export async function getDailySheetsIntegration(
+  areaId: string,
+): Promise<SheetsIntegration | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("daily_campaign_sheets")
+    .select("spreadsheet_id, service_account_json, template_tab_name, enabled")
+    .eq("area_id", areaId)
+    .eq("enabled", true)
+    .maybeSingle();
+
+  if (error || !data?.service_account_json || !data.spreadsheet_id) return null;
+
+  try {
+    const json = await decryptSecret(data.service_account_json);
+    const auth = authFor(json, [SHEETS_SCOPE]);
+    const sheets = google.sheets({ version: "v4", auth });
+
+    return {
+      areaId,
+      spreadsheetId: data.spreadsheet_id,
+      templateTabName: data.template_tab_name || "TEMPLATE",
+      sheets,
+    };
+  } catch (err) {
+    console.error("[sheets] falha ao autenticar (daily):", err);
+    return null;
+  }
+}
+
+/**
+ * Garante que a aba `tabName` existe, duplicada de `integration.templateTabName`
+ * — reusa se já existir (reprocessamento). Compartilhado pelo relatório
+ * semanal e pelo checkpoint diário: mesma mecânica, integrações diferentes.
+ */
+export async function ensureTabFromTemplate(
+  integration: SheetsIntegration,
+  tabName: string,
+): Promise<void> {
+  const meta = await integration.sheets.spreadsheets.get({
+    spreadsheetId: integration.spreadsheetId,
+    fields: "sheets.properties",
+  });
+
+  const sheetsList = meta.data.sheets ?? [];
+  const alreadyExists = sheetsList.some((s) => s.properties?.title === tabName);
+  if (alreadyExists) return;
+
+  const template = sheetsList.find(
+    (s) => s.properties?.title === integration.templateTabName,
+  );
+  const templateSheetId = template?.properties?.sheetId;
+  if (templateSheetId === undefined || templateSheetId === null) {
+    throw new Error(
+      `Aba modelo "${integration.templateTabName}" não encontrada na planilha.`,
+    );
+  }
+
+  await integration.sheets.spreadsheets.batchUpdate({
+    spreadsheetId: integration.spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          duplicateSheet: {
+            sourceSheetId: templateSheetId,
+            newSheetName: tabName,
+          },
+        },
+      ],
+    },
+  });
+}
+
+/**
  * Testa a credencial ANTES de salvar (botão "Testar conexão" no painel) —
  * só pede o título da planilha, chamada leve o bastante pra validar em
  * tempo de formulário.

@@ -599,6 +599,74 @@ export async function saveSheetsIntegration(
   return { ok: `Conectado a "${test.title}".` };
 }
 
+/**
+ * Mesma coisa, pra 2ª planilha (checkpoints diários por campanha,
+ * `daily_campaign_sheets`) — pode ser a mesma service account do relatório
+ * semanal (só precisa compartilhar essa planilha também com o
+ * client_email) ou uma diferente.
+ */
+export async function saveDailyCampaignSheetsIntegration(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const rawSpreadsheet = String(formData.get("spreadsheet") ?? "").trim();
+  const serviceAccountJson = String(formData.get("service_account_json") ?? "").trim();
+  const admin = createAdminClient();
+
+  if (!rawSpreadsheet && !serviceAccountJson) {
+    const { error } = await admin
+      .from("daily_campaign_sheets")
+      .delete()
+      .eq("area_id", ctx.area.id);
+    if (error) return { error: `Falha ao remover: ${error.message}` };
+
+    await audit(ctx.area.id, ctx.user.email, "config.daily_sheets_disconnect", {});
+    revalidatePath("/integracoes");
+    return { ok: "Google Sheets (checkpoints diários) desconectado." };
+  }
+
+  const spreadsheetId = extractSpreadsheetId(rawSpreadsheet);
+  if (!spreadsheetId) return { error: "Cole a URL da planilha ou o ID dela." };
+
+  if (!serviceAccountJson) {
+    return { error: "Cole o JSON da service account." };
+  }
+
+  try {
+    JSON.parse(serviceAccountJson);
+  } catch {
+    return { error: "JSON inválido — cole o arquivo da chave da service account inteiro." };
+  }
+
+  const test = await testSheetsConnection(spreadsheetId, serviceAccountJson);
+  if (!test.ok) {
+    return {
+      error: `Não foi possível acessar a planilha: ${test.error}. Confirme que ela foi compartilhada com o client_email da service account como Editor.`,
+    };
+  }
+
+  const { error } = await admin.from("daily_campaign_sheets").upsert(
+    {
+      area_id: ctx.area.id,
+      spreadsheet_id: spreadsheetId,
+      service_account_json: await encryptSecret(serviceAccountJson),
+      enabled: true,
+    },
+    { onConflict: "area_id" },
+  );
+  if (error) return { error: `Falha ao salvar: ${error.message}` };
+
+  await audit(ctx.area.id, ctx.user.email, "config.daily_sheets_connect", {
+    spreadsheet_id: spreadsheetId,
+  });
+
+  revalidatePath("/integracoes");
+  return { ok: `Conectado a "${test.title}".` };
+}
+
 /** Testa a conexão sem salvar (botão "Testar conexão"). */
 export async function testConnection(
   _prev: FormState,

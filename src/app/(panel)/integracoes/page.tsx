@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
 import { CheckoutConnect } from "./checkout-connect";
+import { DailySheetsConnect } from "./daily-sheets-connect";
 import { MetaConnect, type AccountRow } from "./meta-connect";
 import { SheetsConnect } from "./sheets-connect";
 import { VturbConnect, type VturbPlayerRow } from "./vturb-connect";
@@ -46,6 +47,7 @@ export default async function IntegracoesPage() {
     { data: integrations },
     { data: vturbPlayersData },
     { data: sheetsRow },
+    { data: dailySheetsRow },
   ] = await Promise.all([
     supabase
       .from("meta_ad_accounts")
@@ -68,6 +70,11 @@ export default async function IntegracoesPage() {
       .order("created_at", { ascending: true }),
     supabase
       .from("google_sheets_integrations")
+      .select("spreadsheet_id, service_account_json, template_tab_name, enabled")
+      .eq("area_id", activeArea.id)
+      .maybeSingle(),
+    supabase
+      .from("daily_campaign_sheets")
       .select("spreadsheet_id, service_account_json, template_tab_name, enabled")
       .eq("area_id", activeArea.id)
       .maybeSingle(),
@@ -94,6 +101,9 @@ export default async function IntegracoesPage() {
   }));
 
   const sheetsOn = Boolean(sheetsRow?.service_account_json && sheetsRow?.enabled !== false);
+  const dailySheetsOn = Boolean(
+    dailySheetsRow?.service_account_json && dailySheetsRow?.enabled !== false,
+  );
 
   const metaOn = accounts.some((a) => a.hasToken);
   const checkoutOn = configured.length > 0;
@@ -127,6 +137,12 @@ export default async function IntegracoesPage() {
         ? "Google Sheets conectado · relatório semanal"
         : "Conectar o Google Sheets (opcional, pro relatório semanal)",
       done: sheetsOn,
+    },
+    {
+      label: dailySheetsOn
+        ? "Google Sheets conectado · checkpoints diários"
+        : "Conectar o Google Sheets (opcional, pros checkpoints diários)",
+      done: dailySheetsOn,
     },
   ];
 
@@ -205,6 +221,20 @@ export default async function IntegracoesPage() {
           connected={sheetsOn}
           spreadsheetId={(sheetsRow?.spreadsheet_id as string) ?? null}
           templateTabName={(sheetsRow?.template_tab_name as string) ?? "TEMPLATE"}
+        />
+      </Card>
+
+      {/* 5 — Google Sheets: checkpoints diários (opcional) */}
+      <Card>
+        <CardHeader>
+          <CardLabel>Google Sheets — checkpoints diários</CardLabel>
+          <span className="micro-label">campanhas ativas · a cada ~2h</span>
+        </CardHeader>
+        <DailySheetsConnect
+          baseUrl={baseUrl}
+          connected={dailySheetsOn}
+          spreadsheetId={(dailySheetsRow?.spreadsheet_id as string) ?? null}
+          templateTabName={(dailySheetsRow?.template_tab_name as string) ?? "TEMPLATE"}
         />
       </Card>
     </div>
