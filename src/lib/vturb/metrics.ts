@@ -4,6 +4,7 @@ import { extractAdId } from "@/lib/webhooks/parse";
 
 import { getVturbAccount, getVturbPlayers, toVturbDateTime, vturbPost } from "./client";
 import { VTURB_HOOK_THRESHOLD_SECONDS } from "./config";
+import { discoverVturbPlayers } from "./discover";
 
 /**
  * Métricas de VSL por criativo, vindas da Analytics API da Vturb.
@@ -88,10 +89,24 @@ export async function getVturbByAd(
   const players = await getVturbPlayers(areaId);
   if (players.length === 0) return { byAd, errors };
 
+  // video_duration/pitch_time são exigidos pelo endpoint de retenção (2) e
+  // não ficam salvos em vturb_players (evita duplicar o que a Vturb já sabe
+  // de cada vídeo) — busca uma vez por rodada via /players/list.
+  const discovered = await discoverVturbPlayers(areaId, account.apiKey);
+  if (!discovered.ok) errors.push(`Vturb (metadados dos vídeos): ${discovered.error}`);
+  const playerMeta = new Map(
+    discovered.ok ? discovered.players.map((p) => [p.id, p]) : [],
+  );
+
   const startDate = toVturbDateTime(from, false);
   const endDate = toVturbDateTime(to, true);
 
   for (const player of players) {
+    const meta = playerMeta.get(player.playerId);
+    const durationParams = meta
+      ? { video_duration: meta.duration, pitch_time: meta.pitchTime }
+      : {};
+
     const statsResult = await vturbPost<TrafficOriginStatsRow[]>(
       account,
       "/traffic_origin/stats",
@@ -101,6 +116,7 @@ export async function getVturbByAd(
         start_date: startDate,
         end_date: endDate,
         timezone: "America/Sao_Paulo",
+        ...durationParams,
       },
     );
 
@@ -134,6 +150,7 @@ export async function getVturbByAd(
         start_date: startDate,
         end_date: endDate,
         timezone: "America/Sao_Paulo",
+        ...durationParams,
       },
     );
 
