@@ -73,18 +73,16 @@ export async function buildWeeklyReport(
 
   errors.push(...meta.errors, ...vturb.errors);
 
-  // Só criativos ativos AGORA entram no relatório — um anúncio pausado
-  // depois de rodar na semana ainda aparecia nos insights (histórico), mas
-  // não é mais "ativo" no sentido operacional que o relatório quer mostrar.
-  const activeEntities = meta.rows.filter(
-    (entity) => entity.effectiveStatus.toUpperCase() === "ACTIVE",
-  );
-
-  if (activeEntities.length === 0) {
+  // Sem filtro de status: todo criativo que gastou/teve insight na semana
+  // entra, independente do status atual — é um relatório histórico, e até
+  // segunda a maioria dos criativos de uma semana fechada já foi pausada ou
+  // trocada (confirmado com o usuário: pausado/rejeitado depois não deve
+  // sumir do relatório da semana em que rodou).
+  if (meta.rows.length === 0) {
     return { rowsWritten: 0, errors };
   }
 
-  const rows = activeEntities.map((entity) => {
+  const rows = meta.rows.map((entity) => {
     const adId = entity.id; // no nível "ad", o id da entidade É o ad_id.
     const vturbRow = vturb.byAd.get(adId) ?? null;
     const salesRow = sales.get(adId) ?? null;
