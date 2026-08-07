@@ -15,10 +15,10 @@ import { ensureTabFromTemplate, getDailySheetsIntegration } from "./client";
  * das células que este writer preenche) e uma linha PRONTA pra cada horário
  * de checkpoint. Por isso o writer só escreve em duas faixas por linha —
  * `B:H` (FATURAMENTO..CPI) e `M` (VENDAS) — e NUNCA em `I:L` (fórmulas) nem
- * em `N` (AÇÃO/RESULTADO, sempre manual). `CAMPANHA`/`ORÇAMENTO`/`PRODUTO`
- * no rodapé também ficam manuais nesta versão — a aba já se identifica pelo
- * próprio nome, e mexer em células fundidas (merged) sem certeza do layout
- * exato arriscaria escrever no lugar errado.
+ * em `N` (AÇÃO/RESULTADO, sempre manual). O nome da campanha vai pra `C13`
+ * (célula fixa do rodapé, confirmada contra o template real do usuário) só
+ * na criação da aba. `ORÇAMENTO`/`PRODUTO` continuam manuais — sem posição
+ * confirmada nem fonte confiável, respectivamente.
  */
 
 export type WriteDailyCheckpointResult =
@@ -84,7 +84,24 @@ export async function writeDailyCheckpointToSheet(
   const tabName = tabNameFor(dayYmd, snapshot.campaignName);
 
   try {
-    await ensureTabFromTemplate(integration, tabName);
+    const { created } = await ensureTabFromTemplate(integration, tabName);
+
+    if (created) {
+      // Preenche o nome da campanha no rodapé só na criação da aba — célula
+      // fixa (C13), confirmada contra o template real do usuário. Melhor
+      // esforço: se o layout mudar e a célula não existir mais, não derruba
+      // a escrita do checkpoint (que é o que importa).
+      try {
+        await integration.sheets.spreadsheets.values.update({
+          spreadsheetId: integration.spreadsheetId,
+          range: `'${tabName}'!C13`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [[snapshot.campaignName]] },
+        });
+      } catch (err) {
+        console.error("[sheets/daily] falha ao preencher C13 (campanha):", err);
+      }
+    }
 
     const row = await findCheckpointRow(
       integration.sheets,

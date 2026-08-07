@@ -107,11 +107,13 @@ export async function getDailySheetsIntegration(
  * Garante que a aba `tabName` existe, duplicada de `integration.templateTabName`
  * — reusa se já existir (reprocessamento). Compartilhado pelo relatório
  * semanal e pelo checkpoint diário: mesma mecânica, integrações diferentes.
+ * Devolve se a aba foi CRIADA agora (vs já existia) — quem chama usa isso
+ * pra saber se precisa preencher algo só uma vez, na criação.
  */
 export async function ensureTabFromTemplate(
   integration: SheetsIntegration,
   tabName: string,
-): Promise<void> {
+): Promise<{ created: boolean }> {
   const meta = await integration.sheets.spreadsheets.get({
     spreadsheetId: integration.spreadsheetId,
     fields: "sheets.properties",
@@ -119,7 +121,7 @@ export async function ensureTabFromTemplate(
 
   const sheetsList = meta.data.sheets ?? [];
   const alreadyExists = sheetsList.some((s) => s.properties?.title === tabName);
-  if (alreadyExists) return;
+  if (alreadyExists) return { created: false };
 
   const template = sheetsList.find(
     (s) => s.properties?.title === integration.templateTabName,
@@ -144,6 +146,8 @@ export async function ensureTabFromTemplate(
       ],
     },
   });
+
+  return { created: true };
 }
 
 /**
