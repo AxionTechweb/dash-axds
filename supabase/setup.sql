@@ -1099,6 +1099,26 @@ grant all on
 to service_role;
 
 -- ---------------------------------------------------------------------
+-- 20260810120000_fix_rate_columns_precision.sql
+-- ---------------------------------------------------------------------
+-- =============================================================================
+-- Corrige overflow em hook_rate/play_rate/pitch_retention
+-- =============================================================================
+-- Descoberto no primeiro cron real da semana: alguns criativos com poucas
+-- sessões (1-5) tiveram play_rate ou over_pitch_rate EXATAMENTE 100% —
+-- "numeric(6,4)" só suporta até 99.9999 (2 dígitos antes da vírgula), então
+-- 100.0000 estourava e derrubava o upsert inteiro em creative_reports
+-- (rowsWritten=0 silenciosamente, sem chegar a escrever no Sheets).
+-- numeric(7,4) dá margem até 999.9999 — de sobra pra uma taxa que já é
+-- limitada a 0–100 pela própria Vturb, só corrigindo o estouro no limite.
+-- =============================================================================
+
+alter table public.creative_reports
+  alter column hook_rate       type numeric(7,4),
+  alter column play_rate       type numeric(7,4),
+  alter column pitch_retention type numeric(7,4);
+
+-- ---------------------------------------------------------------------
 -- Histórico de migrations: faz um futuro `supabase db push` saber que
 -- estas já foram aplicadas, evitando reaplicar tudo por cima.
 -- ---------------------------------------------------------------------
@@ -1120,7 +1140,8 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260801120000', 'add_payt_platform'),
   ('20260803120000', 'purchase_payment_method'),
   ('20260805120000', 'weekly_report'),
-  ('20260806120000', 'daily_campaign_checkpoints')
+  ('20260806120000', 'daily_campaign_checkpoints'),
+  ('20260810120000', 'fix_rate_columns_precision')
 on conflict (version) do nothing;
 
 commit;

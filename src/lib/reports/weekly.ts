@@ -221,6 +221,10 @@ export async function runWeeklyReportForAllAreas(): Promise<WeeklyReportRunSumma
           rows_written: built.rowsWritten,
           sheet_ok: sheetOk,
           sheet_error: sheetError ?? null,
+          // rowsWritten=0 pode ser "sem anúncio na semana" OU uma falha no
+          // upsert (ex.: overflow numérico) — sem isso aqui, a única forma
+          // de saber qual era chamar a rota na mão e ler a resposta.
+          errors: built.errors,
         },
       });
     } catch (err) {
