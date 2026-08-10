@@ -32,6 +32,8 @@ export type MetaEntity = {
   /** Conta interna (meta_ad_accounts.id) e rótulo, para filtro e escrita. */
   accountId: string;
   accountLabel: string;
+  /** Moeda da conta (ex.: "BRL", "USD") — spend/revenue vêm crus, sem conversão. */
+  accountCurrency: string | null;
   spend: number;
   impressions: number;
   clicks: number;
@@ -192,7 +194,7 @@ export async function getMetaEntities(
     const idField = LEVEL_ID_FIELD[level];
     const aggregated = new Map<
       string,
-      Omit<MetaEntity, "id" | "name" | "level" | "status" | "effectiveStatus" | "budgetAmount" | "budgetType" | "accountId" | "accountLabel">
+      Omit<MetaEntity, "id" | "name" | "level" | "status" | "effectiveStatus" | "budgetAmount" | "budgetType" | "accountId" | "accountLabel" | "accountCurrency">
     >();
 
     for (const raw of insights.data) {
@@ -259,6 +261,7 @@ export async function getMetaEntities(
         budgetType: daily ? "daily" : lifetime ? "lifetime" : null,
         accountId: account.id,
         accountLabel: account.label,
+        accountCurrency: account.currency,
         ...metrics,
         adIds: level === "ad" ? [id] : metrics.adIds,
       });

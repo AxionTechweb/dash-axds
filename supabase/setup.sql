@@ -1119,6 +1119,23 @@ alter table public.creative_reports
   alter column pitch_retention type numeric(7,4);
 
 -- ---------------------------------------------------------------------
+-- 20260810130000_meta_account_currency.sql
+-- ---------------------------------------------------------------------
+-- =============================================================================
+-- Moeda da conta de anúncio da Meta
+-- =============================================================================
+-- Descoberto ao conectar uma conta em dólar ("USD 2"): os relatórios (semanal
+-- e checkpoint diário) usam o `spend`/`revenue` cru que a Meta devolve, na
+-- moeda DA CONTA — sem conversão (decisão do usuário: não converter câmbio).
+-- Sem saber a moeda, esses números ficavam rotulados "(R$)" mesmo quando são
+-- dólar. `currency` já vem em `discoverAdAccounts`/`testAdAccountConnection`
+-- (Graph API) — só faltava persistir.
+-- =============================================================================
+
+alter table public.meta_ad_accounts
+  add column if not exists currency text;
+
+-- ---------------------------------------------------------------------
 -- Histórico de migrations: faz um futuro `supabase db push` saber que
 -- estas já foram aplicadas, evitando reaplicar tudo por cima.
 -- ---------------------------------------------------------------------
@@ -1141,7 +1158,8 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260803120000', 'purchase_payment_method'),
   ('20260805120000', 'weekly_report'),
   ('20260806120000', 'daily_campaign_checkpoints'),
-  ('20260810120000', 'fix_rate_columns_precision')
+  ('20260810120000', 'fix_rate_columns_precision'),
+  ('20260810130000', 'meta_account_currency')
 on conflict (version) do nothing;
 
 commit;

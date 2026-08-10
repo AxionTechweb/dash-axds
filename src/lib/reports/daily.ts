@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getWeeklySalesByAdAndTier } from "@/lib/attribution";
+import { withCurrencyTag } from "@/lib/format";
 import { getMetaEntities } from "@/lib/meta/campaigns";
 import { getCheckpointDayRange } from "@/lib/period";
 import { writeDailyCheckpointToSheet } from "@/lib/sheets/daily-writer";
@@ -68,7 +69,10 @@ async function buildAreaSnapshots(
 
   const snapshots = activeCampaigns.map((c) => ({
     campaignId: c.id,
-    campaignName: c.name,
+    // Tag de moeda embutida aqui — propaga sozinha pro nome da aba e pro
+    // C13 (writer só usa este campo, sem saber de moeda). Sem conversão de
+    // câmbio (decisão do usuário): só sinaliza quando não é BRL.
+    campaignName: withCurrencyTag(c.name, c.accountCurrency),
     accountLabel: c.accountLabel,
     horario,
     spend: c.spend,

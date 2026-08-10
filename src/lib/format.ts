@@ -30,6 +30,18 @@ export function formatRoas(value: number): string {
   return `${value.toFixed(2)}x`;
 }
 
+/**
+ * Sinaliza quando um rótulo (conta/campanha da Meta) é de moeda estrangeira —
+ * os relatórios (semanal e checkpoint diário) NÃO convertem câmbio, então
+ * spend/receita ficam na moeda da própria conta. Sem isso, um valor em
+ * dólar apareceria rotulado como se fosse real. BRL/nulo não ganham
+ * sufixo — só o que precisa do aviso.
+ */
+export function withCurrencyTag(label: string, currency: string | null): string {
+  if (!currency || currency.toUpperCase() === "BRL") return label;
+  return `${label} (${currency.toUpperCase()})`;
+}
+
 /** Mascara e-mail para exibição (LGPD): "jo***@dominio.com". */
 export function maskEmail(email: string | null | undefined): string {
   if (!email) return "—";

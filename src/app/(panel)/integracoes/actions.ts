@@ -290,6 +290,7 @@ export async function connectAccounts(
     label: byId.get(id)?.name ?? id,
     ad_account_id: id,
     ads_token: encrypted,
+    currency: byId.get(id)?.currency ?? null,
   }));
 
   // Remove as que já existiam para não duplicar ao reconectar.
@@ -359,6 +360,7 @@ export async function saveAdAccount(
     label: parsed.data.label,
     ad_account_id: parsed.data.ad_account_id,
     ads_token: encrypted,
+    currency: test.accountCurrency ?? null,
   };
 
   const { error } = id

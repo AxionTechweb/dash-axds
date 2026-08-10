@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getWeeklySalesByAdAndTier } from "@/lib/attribution";
+import { withCurrencyTag } from "@/lib/format";
 import { getMetaEntities } from "@/lib/meta/campaigns";
 import { META_AD_TAX_RATE } from "@/lib/meta/config";
 import { getLastWeekRange } from "@/lib/period";
@@ -73,16 +74,25 @@ export async function buildWeeklyReport(
 
   errors.push(...meta.errors, ...vturb.errors);
 
-  // Sem filtro de status: todo criativo que gastou/teve insight na semana
+  // Sem filtro de STATUS: todo criativo que gastou/teve insight na semana
   // entra, independente do status atual — é um relatório histórico, e até
   // segunda a maioria dos criativos de uma semana fechada já foi pausada ou
   // trocada (confirmado com o usuário: pausado/rejeitado depois não deve
   // sumir do relatório da semana em que rodou).
-  if (meta.rows.length === 0) {
+  //
+  // COM filtro de ATIVIDADE: `getMetaEntities` traz TODO anúncio que existe
+  // na conta (até 500, via /act_X/ads), não só os com insight no período —
+  // um anúncio velho sem gasto nenhum na semana ainda ganhava uma linha
+  // zerada. Aqui descarta quem não teve gasto nem impressão de verdade.
+  const activeEntities = meta.rows.filter(
+    (entity) => entity.spend > 0 || entity.impressions > 0,
+  );
+
+  if (activeEntities.length === 0) {
     return { rowsWritten: 0, errors };
   }
 
-  const rows = meta.rows.map((entity) => {
+  const rows = activeEntities.map((entity) => {
     const adId = entity.id; // no nível "ad", o id da entidade É o ad_id.
     const vturbRow = vturb.byAd.get(adId) ?? null;
     const salesRow = sales.get(adId) ?? null;
@@ -102,7 +112,7 @@ export async function buildWeeklyReport(
       week_start: weekStartYmd,
       week_end: weekEndYmd,
       account_id: entity.accountId,
-      account_label: entity.accountLabel,
+      account_label: withCurrencyTag(entity.accountLabel, entity.accountCurrency),
       ad_id: adId,
       ad_name: entity.name,
       campaign_id: null,

@@ -57,6 +57,8 @@ export type AdAccount = {
   label: string;
   ad_account_id: string;
   ads_token: string | null;
+  /** Moeda da conta na Meta (ex.: "BRL", "USD") — sem conversão, só rótulo. */
+  currency: string | null;
 };
 
 export function toYmd(date: Date): string {
@@ -98,7 +100,7 @@ export async function getAdAccounts(areaId: string): Promise<AdAccount[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("meta_ad_accounts")
-    .select("id, label, ad_account_id, ads_token")
+    .select("id, label, ad_account_id, ads_token, currency")
     .eq("area_id", areaId);
 
   if (error || !data) return [];
