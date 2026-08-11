@@ -124,15 +124,24 @@ export async function writeDailyCheckpointToSheet(
     const cpi =
       snapshot.initiateCheckout > 0 ? round2(snapshot.spend / snapshot.initiateCheckout) : "";
 
+    // FATURAMENTO vira fórmula (preço × VENDAS da própria linha) em vez do
+    // valor que a Meta reporta via pixel — pedido do usuário: VENDAS já vem
+    // confiável do checkout, então multiplicar pelo preço bate melhor que a
+    // receita que a Meta atribui sozinha. Preço fixo por enquanto (mesmo
+    // valor pra toda campanha) — se algum dia houver campanha com produto de
+    // preço diferente, isso precisa vir de algum lugar configurável.
+    const UNIT_PRICE = "190,62";
+    const faturamentoFormula = `=${UNIT_PRICE}*M${row}`;
+
     await integration.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: integration.spreadsheetId,
       requestBody: {
         valueInputOption: "USER_ENTERED",
         data: [
           {
-            // B:H — FATURAMENTO, INVEST., CPM, CTR, CPC, CPV, CPI.
+            // B:H — FATURAMENTO (fórmula), INVEST., CPM, CTR, CPC, CPV, CPI.
             range: `'${tabName}'!B${row}:H${row}`,
-            values: [[round2(snapshot.revenue), round2(snapshot.spend), cpm, ctr, cpc, cpv, cpi]],
+            values: [[faturamentoFormula, round2(snapshot.spend), cpm, ctr, cpc, cpv, cpi]],
           },
           {
             // M — VENDAS (antes manual, agora automático via PayT/checkout).
