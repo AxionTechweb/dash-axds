@@ -19,6 +19,11 @@ import { ensureTabFromTemplate, getDailySheetsIntegration } from "./client";
  * (célula fixa do rodapé, confirmada contra o template real do usuário) só
  * na criação da aba. `ORÇAMENTO`/`PRODUTO` continuam manuais — sem posição
  * confirmada nem fonte confiável, respectivamente.
+ *
+ * Na criação da aba, TAMBÉM limpa `B:H`/`M` das 10 linhas de horário antes
+ * de escrever — o TEMPLATE pode ter número de teste/dia anterior parado
+ * nas células, e sem isso ele aparecia como se fosse de hoje até aquele
+ * horário específico ser escrito de verdade.
  */
 
 export type WriteDailyCheckpointResult =
@@ -43,29 +48,54 @@ function tabNameFor(dayYmd: string, campaignName: string): string {
   return `${d}.${m}.${y} - ${sanitizeTabName(campaignName)}`;
 }
 
-/**
- * Acha a linha (1-indexed) cuja coluna A bate com o horário do checkpoint.
- * As 10 linhas de horário já vêm prontas do template — nunca insere linha.
- */
-async function findCheckpointRow(
+/** Todas as linhas (1-indexed) de coluna A que parecem hora de checkpoint (0–23). */
+async function findCheckpointRows(
   sheets: sheets_v4.Sheets,
   spreadsheetId: string,
   tabName: string,
-  horario: number,
-): Promise<number | null> {
+): Promise<Map<number, number>> {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: `'${tabName}'!A1:A40`,
   });
 
+  const byHour = new Map<number, number>();
   const rows = res.data.values ?? [];
   for (let i = 0; i < rows.length; i++) {
     const raw = rows[i]?.[0];
     if (raw === undefined || raw === null || raw === "") continue;
     const n = Number(String(raw).trim());
-    if (Number.isFinite(n) && n === horario) return i + 1;
+    if (Number.isFinite(n) && n >= 0 && n <= 23) byHour.set(n, i + 1);
   }
-  return null;
+  return byHour;
+}
+
+/**
+ * Limpa os DADOS de todas as linhas de horário logo que a aba do dia é
+ * criada — o TEMPLATE pode ter números de um teste/dia anterior parados
+ * nas células (visto na prática: valores de exemplo nunca apagados), e sem
+ * isso eles apareciam como se fossem de hoje até aquele horário ser escrito
+ * de verdade. Limpa só `B:H` e `M` (as mesmas faixas que o writer escreve)
+ * — nunca `I:L` (fórmulas) nem `A`/`N`.
+ */
+async function clearCheckpointRows(
+  sheets: sheets_v4.Sheets,
+  spreadsheetId: string,
+  tabName: string,
+  checkpointRows: Map<number, number>,
+): Promise<void> {
+  if (checkpointRows.size === 0) return;
+
+  const rowNumbers = [...checkpointRows.values()];
+  const minRow = Math.min(...rowNumbers);
+  const maxRow = Math.max(...rowNumbers);
+
+  await sheets.spreadsheets.values.batchClear({
+    spreadsheetId,
+    requestBody: {
+      ranges: [`'${tabName}'!B${minRow}:H${maxRow}`, `'${tabName}'!M${minRow}:M${maxRow}`],
+    },
+  });
 }
 
 export async function writeDailyCheckpointToSheet(
@@ -86,11 +116,30 @@ export async function writeDailyCheckpointToSheet(
   try {
     const { created } = await ensureTabFromTemplate(integration, tabName);
 
+    const checkpointRows = await findCheckpointRows(
+      integration.sheets,
+      integration.spreadsheetId,
+      tabName,
+    );
+
     if (created) {
+      // Aba nova: limpa qualquer valor que tenha vindo junto do TEMPLATE
+      // (teste antigo, dia anterior) antes de escrever o primeiro checkpoint
+      // de verdade. Melhor esforço — uma falha aqui não deve impedir a
+      // escrita do checkpoint em si.
+      try {
+        await clearCheckpointRows(
+          integration.sheets,
+          integration.spreadsheetId,
+          tabName,
+          checkpointRows,
+        );
+      } catch (err) {
+        console.error("[sheets/daily] falha ao limpar linhas do template:", err);
+      }
+
       // Preenche o nome da campanha no rodapé só na criação da aba — célula
-      // fixa (C13), confirmada contra o template real do usuário. Melhor
-      // esforço: se o layout mudar e a célula não existir mais, não derruba
-      // a escrita do checkpoint (que é o que importa).
+      // fixa (C13), confirmada contra o template real do usuário.
       try {
         await integration.sheets.spreadsheets.values.update({
           spreadsheetId: integration.spreadsheetId,
@@ -103,12 +152,7 @@ export async function writeDailyCheckpointToSheet(
       }
     }
 
-    const row = await findCheckpointRow(
-      integration.sheets,
-      integration.spreadsheetId,
-      tabName,
-      snapshot.horario,
-    );
+    const row = checkpointRows.get(snapshot.horario);
     if (!row) {
       throw new Error(
         `Linha do horário ${snapshot.horario}h não encontrada na aba "${tabName}".`,
