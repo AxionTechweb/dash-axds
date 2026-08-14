@@ -11,16 +11,20 @@ import { ensureTabFromTemplate, getDailySheetsIntegration } from "./client";
  * do TEMPLATE na primeira chamada do dia pra aquela campanha).
  *
  * Diferente do relatório semanal: aqui a aba já tem FÓRMULAS vivas nas
- * colunas "automático" (CPA, ROAS, IMPOSTO+ADS, LUCRO — calculadas a partir
- * das células que este writer preenche) e uma linha PRONTA pra cada horário
- * de checkpoint. Por isso o writer só escreve em duas faixas por linha —
- * `B:H` (FATURAMENTO..CPI) e `M` (VENDAS) — e NUNCA em `I:L` (fórmulas) nem
- * em `N` (AÇÃO/RESULTADO, sempre manual). O nome da campanha vai pra `C13`
+ * colunas "automático" (CPA, ROAS, LUCRO — calculadas a partir das células
+ * que este writer preenche) e uma linha PRONTA pra cada horário de
+ * checkpoint. Por isso o writer só escreve em duas faixas por linha —
+ * `B:H` (FATURAMENTO..CPI) e `L` (VENDAS) — e NUNCA em `I:K` (fórmulas) nem
+ * em `M` (AÇÃO/RESULTADO, sempre manual). O nome da campanha vai pra `C13`
  * (célula fixa do rodapé, confirmada contra o template real do usuário) só
  * na criação da aba. `ORÇAMENTO`/`PRODUTO` continuam manuais — sem posição
  * confirmada nem fonte confiável, respectivamente.
  *
- * Na criação da aba, TAMBÉM limpa `B:H`/`M` das 10 linhas de horário antes
+ * A coluna IMPOSTO+ADS (K original) foi removida do template (conta em
+ * dólar, sem esse imposto) — VENDAS, que era M, passou a ser `L`, e LUCRO
+ * (agora em K) não desconta mais imposto: `=Faturamento-Investimento`.
+ *
+ * Na criação da aba, TAMBÉM limpa `B:H`/`L` das 10 linhas de horário antes
  * de escrever — o TEMPLATE pode ter número de teste/dia anterior parado
  * nas células, e sem isso ele aparecia como se fosse de hoje até aquele
  * horário específico ser escrito de verdade.
@@ -75,8 +79,8 @@ async function findCheckpointRows(
  * criada — o TEMPLATE pode ter números de um teste/dia anterior parados
  * nas células (visto na prática: valores de exemplo nunca apagados), e sem
  * isso eles apareciam como se fossem de hoje até aquele horário ser escrito
- * de verdade. Limpa só `B:H` e `M` (as mesmas faixas que o writer escreve)
- * — nunca `I:L` (fórmulas) nem `A`/`N`.
+ * de verdade. Limpa só `B:H` e `L` (as mesmas faixas que o writer escreve)
+ * — nunca `I:K` (fórmulas) nem `A`/`M`.
  */
 async function clearCheckpointRows(
   sheets: sheets_v4.Sheets,
@@ -93,7 +97,7 @@ async function clearCheckpointRows(
   await sheets.spreadsheets.values.batchClear({
     spreadsheetId,
     requestBody: {
-      ranges: [`'${tabName}'!B${minRow}:H${maxRow}`, `'${tabName}'!M${minRow}:M${maxRow}`],
+      ranges: [`'${tabName}'!B${minRow}:H${maxRow}`, `'${tabName}'!L${minRow}:L${maxRow}`],
     },
   });
 }
@@ -175,7 +179,7 @@ export async function writeDailyCheckpointToSheet(
     // valor pra toda campanha) — se algum dia houver campanha com produto de
     // preço diferente, isso precisa vir de algum lugar configurável.
     const UNIT_PRICE = "190,62";
-    const faturamentoFormula = `=${UNIT_PRICE}*M${row}`;
+    const faturamentoFormula = `=${UNIT_PRICE}*L${row}`;
 
     await integration.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: integration.spreadsheetId,
@@ -188,8 +192,8 @@ export async function writeDailyCheckpointToSheet(
             values: [[faturamentoFormula, round2(snapshot.spend), cpm, ctr, cpc, cpv, cpi]],
           },
           {
-            // M — VENDAS (antes manual, agora automático via PayT/checkout).
-            range: `'${tabName}'!M${row}`,
+            // L — VENDAS (antes manual, agora automático via PayT/checkout).
+            range: `'${tabName}'!L${row}`,
             values: [[snapshot.sales]],
           },
         ],
