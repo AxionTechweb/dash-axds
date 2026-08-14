@@ -200,6 +200,20 @@ export async function writeDailyCheckpointToSheet(
       },
     });
 
+    // Defesa observada na prática: o próprio Google Sheets, ao detectar um
+    // padrão de fórmula repetido em B3:B12, às vezes estende ele sozinho
+    // pras células vazias logo abaixo (B13:B15, o rodapé) — nada que este
+    // código escreve. Limpa de novo depois de cada checkpoint pra garantir
+    // que isso nunca fique visível. Melhor esforço.
+    try {
+      await integration.sheets.spreadsheets.values.clear({
+        spreadsheetId: integration.spreadsheetId,
+        range: `'${tabName}'!B13:B15`,
+      });
+    } catch (err) {
+      console.error("[sheets/daily] falha ao limpar B13:B15 (defensivo):", err);
+    }
+
     return { ok: true, sheetTabName: tabName };
   } catch (err) {
     return {
