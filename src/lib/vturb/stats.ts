@@ -6,13 +6,10 @@ import { discoverVturbPlayers } from "./discover";
 /**
  * Dados do painel /vturb — visão "ao vivo" de UM vídeo (não é o relatório por
  * criativo de src/lib/vturb/metrics.ts, que cruza com ad_id da Meta). Sem
- * snapshot no Supabase: a página chama a Analytics API a cada carregamento.
- *
- * Período "todo o histórico do vídeo" — sem filtro de data, igual ao painel
- * nativo da Vturb quando nenhum range é escolhido. Usamos uma data de início
- * bem antiga como aproximação, já que a API exige start_date/end_date.
+ * snapshot no Supabase: a página chama a Analytics API a cada carregamento,
+ * com o MESMO período do seletor de data do cabeçalho (compartilhado com o
+ * resto do painel).
  */
-const ALL_TIME_START = "2020-01-01 00:00:00";
 
 function toNumberOrNull(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined) return null;
@@ -55,15 +52,16 @@ type SessionsStatsResponse = {
 export async function getPlayerStats(
   areaId: string,
   playerId: string,
+  from: Date,
+  to: Date,
 ): Promise<{ stats: VturbPlayerStats | null; error: string | null }> {
   const account = await getVturbAccount(areaId);
   if (!account) return { stats: null, error: "Vturb não conectado nesta área." };
 
-  const endDate = toVturbDateTime(new Date(), true);
   const result = await vturbPost<SessionsStatsResponse>(account, "/sessions/stats", {
     player_id: playerId,
-    start_date: ALL_TIME_START,
-    end_date: endDate,
+    start_date: toVturbDateTime(from, false),
+    end_date: toVturbDateTime(to, true),
     timezone: "America/Sao_Paulo",
   });
 
@@ -105,6 +103,8 @@ type EngagementResponse = { grouped_timed?: { timed: number; total_users: number
 export async function getPlayerRetentionCurve(
   areaId: string,
   playerId: string,
+  from: Date,
+  to: Date,
 ): Promise<{ points: VturbRetentionPoint[]; error: string | null }> {
   const account = await getVturbAccount(areaId);
   if (!account) return { points: [], error: "Vturb não conectado nesta área." };
@@ -112,14 +112,13 @@ export async function getPlayerRetentionCurve(
   const discovered = await discoverVturbPlayers(areaId, account.apiKey);
   const meta = discovered.ok ? discovered.players.find((p) => p.id === playerId) : undefined;
 
-  const endDate = toVturbDateTime(new Date(), true);
   const result = await vturbPost<EngagementResponse | EngagementResponse[]>(
     account,
     "/times/user_engagement",
     {
       player_id: playerId,
-      start_date: ALL_TIME_START,
-      end_date: endDate,
+      start_date: toVturbDateTime(from, false),
+      end_date: toVturbDateTime(to, true),
       timezone: "America/Sao_Paulo",
       ...(meta ? { video_duration: meta.duration, pitch_time: meta.pitchTime } : {}),
     },

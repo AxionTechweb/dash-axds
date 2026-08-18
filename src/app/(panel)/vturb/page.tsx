@@ -19,8 +19,9 @@ import { KpiCard } from "@/components/panel/kpi-card";
 import { VturbRetentionChart } from "@/components/panel/vturb-retention-chart";
 import { Card, CardHeader, CardLabel } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
-import { cn } from "@/lib/utils";
 import { formatNumber, formatPercent } from "@/lib/format";
+import { resolvePeriod } from "@/lib/period";
+import { cn } from "@/lib/utils";
 import { getVturbPlayers } from "@/lib/vturb/client";
 import { getPlayerRetentionCurve, getPlayerStats } from "@/lib/vturb/stats";
 
@@ -30,7 +31,7 @@ export const dynamic = "force-dynamic";
 export default async function VturbPage({
   searchParams,
 }: {
-  searchParams: Promise<{ player?: string }>;
+  searchParams: Promise<{ player?: string; period?: string; from?: string; to?: string }>;
 }) {
   const activeArea = await getActiveArea();
   if (!activeArea) {
@@ -62,18 +63,25 @@ export default async function VturbPage({
 
   const params = await searchParams;
   const selected = players.find((p) => p.playerId === params.player) ?? players[0];
+  const period = resolvePeriod(params);
 
   const [{ stats, error: statsError }, { points, error: curveError }] = await Promise.all([
-    getPlayerStats(activeArea.id, selected.playerId),
-    getPlayerRetentionCurve(activeArea.id, selected.playerId),
+    getPlayerStats(activeArea.id, selected.playerId, period.from, period.to),
+    getPlayerRetentionCurve(activeArea.id, selected.playerId, period.from, period.to),
   ]);
+
+  const tabParams = new URLSearchParams();
+  if (params.period) tabParams.set("period", params.period);
+  if (params.from) tabParams.set("from", params.from);
+  if (params.to) tabParams.set("to", params.to);
+  const tabQuery = tabParams.toString();
 
   return (
     <div className="space-y-4">
       <div>
         <h2 className="display-title text-3xl text-foreground md:text-4xl">Vturb</h2>
         <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-          Desempenho do vídeo, todo o histórico — dados ao vivo da Vturb.
+          Desempenho do vídeo — período: {period.label}. Dados ao vivo da Vturb.
         </p>
       </div>
 
@@ -81,7 +89,7 @@ export default async function VturbPage({
         {players.map((player) => (
           <Link
             key={player.playerId}
-            href={`/vturb?player=${player.playerId}`}
+            href={`/vturb?player=${player.playerId}${tabQuery ? `&${tabQuery}` : ""}`}
             className={cn(
               "micro-label rounded-full border px-4 py-2 transition-colors",
               player.playerId === selected.playerId
