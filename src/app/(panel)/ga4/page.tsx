@@ -34,6 +34,11 @@ type SessionSourceRow = {
   total_revenue: number;
 };
 
+type SourceMediumRow = {
+  source_medium: string;
+  sessions: number;
+};
+
 export default async function Ga4Page() {
   const activeArea = await getActiveArea();
   if (!activeArea) {
@@ -74,22 +79,28 @@ export default async function Ga4Page() {
     );
   }
 
-  const [{ data: rowsData }, { data: sourceRowsData }] = await Promise.all([
-    supabase
-      .from("ga4_landing_pages")
-      .select(
-        "landing_page, sessions, active_users, new_users, avg_engagement_seconds, key_events, total_revenue, key_event_rate",
-      )
-      .eq("area_id", activeArea.id)
-      .eq("day", latest.day),
-    supabase
-      .from("ga4_session_sources")
-      .select(
-        "source, active_users, sessions, engaged_sessions, avg_engagement_seconds, engaged_sessions_per_user, events_per_session, engagement_rate, key_events, event_count, total_revenue",
-      )
-      .eq("area_id", activeArea.id)
-      .eq("day", latest.day),
-  ]);
+  const [{ data: rowsData }, { data: sourceRowsData }, { data: sourceMediumRowsData }] =
+    await Promise.all([
+      supabase
+        .from("ga4_landing_pages")
+        .select(
+          "landing_page, sessions, active_users, new_users, avg_engagement_seconds, key_events, total_revenue, key_event_rate",
+        )
+        .eq("area_id", activeArea.id)
+        .eq("day", latest.day),
+      supabase
+        .from("ga4_session_sources")
+        .select(
+          "source, active_users, sessions, engaged_sessions, avg_engagement_seconds, engaged_sessions_per_user, events_per_session, engagement_rate, key_events, event_count, total_revenue",
+        )
+        .eq("area_id", activeArea.id)
+        .eq("day", latest.day),
+      supabase
+        .from("ga4_source_mediums")
+        .select("source_medium, sessions")
+        .eq("area_id", activeArea.id)
+        .eq("day", latest.day),
+    ]);
 
   const rows = (rowsData ?? []) as LandingPageRow[];
   const total = rows.find((r) => r.landing_page === "(total)");
@@ -102,6 +113,10 @@ export default async function Ga4Page() {
   const sources = sourceRows
     .filter((r) => r.source !== "(total)")
     .sort((a, b) => b.sessions - a.sessions);
+
+  const sourceMediums = ((sourceMediumRowsData ?? []) as SourceMediumRow[]).sort(
+    (a, b) => b.sessions - a.sessions,
+  );
 
   return (
     <div className="space-y-4">
@@ -166,6 +181,32 @@ export default async function Ga4Page() {
               {sourceTotal ? <SourceRow row={sourceTotal} highlight label="Total" /> : null}
               {sources.map((row) => (
                 <SourceRow key={row.source} row={row} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardLabel>Sessões por origem/mídia da sessão</CardLabel>
+        </CardHeader>
+        <div className="max-h-96 overflow-y-auto overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <Th>Origem / mídia da sessão</Th>
+                <Th align="right">Sessões</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {sourceMediums.map((row) => (
+                <tr key={row.source_medium} className="border-b border-border/60 last:border-0">
+                  <td className="max-w-md truncate px-4 py-2.5">{row.source_medium}</td>
+                  <td className="px-4 py-2.5 text-right font-mono tabular">
+                    {formatNumber(row.sessions)}
+                  </td>
+                </tr>
               ))}
             </tbody>
           </table>

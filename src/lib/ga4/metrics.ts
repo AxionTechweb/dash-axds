@@ -204,3 +204,34 @@ export async function getSessionSourceReport(
 
   return { rows, errors: [] };
 }
+
+/* ------------------------------------------------- origem/mídia da sessão */
+
+export type Ga4SourceMediumRow = {
+  sourceMedium: string;
+  sessions: number;
+};
+
+export async function getSourceMediumReport(
+  areaId: string,
+): Promise<{ rows: Ga4SourceMediumRow[]; errors: string[] }> {
+  const integration = await getGa4Integration(areaId);
+  if (!integration) return { rows: [], errors: [] };
+
+  const { data, error } = await runReport(integration, {
+    dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
+    dimensions: [{ name: "sessionSourceMedium" }],
+    metrics: [{ name: "sessions" }],
+    orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+    limit: 500,
+  });
+
+  if (error || !data) return { rows: [], errors: [error ?? "falha desconhecida"] };
+
+  const rows = (data.rows ?? []).map((row) => ({
+    sourceMedium: row.dimensionValues?.[0]?.value ?? "(não definido)",
+    sessions: toNumber(row.metricValues?.[0]?.value),
+  }));
+
+  return { rows, errors: [] };
+}

@@ -1,14 +1,18 @@
 import "server-only";
 
-import { getLandingPageReport, getSessionSourceReport } from "@/lib/ga4/metrics";
+import {
+  getLandingPageReport,
+  getSessionSourceReport,
+  getSourceMediumReport,
+} from "@/lib/ga4/metrics";
 import { getTodayYmdBRT } from "@/lib/period";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * Sincroniza os snapshots diários do GA4 (página de destino + origem da
- * sessão) pra TODAS as áreas — chamado pelo cron diário. Cada área isolada
- * em try/catch: uma falha (ex.: credencial inválida numa área) não derruba
- * as demais.
+ * sessão + origem/mídia da sessão) pra TODAS as áreas — chamado pelo cron
+ * diário. Cada área isolada em try/catch: uma falha (ex.: credencial
+ * inválida numa área) não derruba as demais.
  */
 
 export type Ga4AreaSummary = {
@@ -81,6 +85,25 @@ export async function runGa4SyncForAllAreas(): Promise<Ga4AreaSummary[]> {
           .upsert(dbRows, { onConflict: "area_id,day,source" });
 
         if (error) errors.push(`ga4_session_sources: ${error.message}`);
+        else rowsWritten += dbRows.length;
+      }
+
+      const sourceMediums = await getSourceMediumReport(areaId);
+      errors.push(...sourceMediums.errors);
+
+      if (sourceMediums.rows.length > 0) {
+        const dbRows = sourceMediums.rows.map((row) => ({
+          area_id: areaId,
+          day: dayYmd,
+          source_medium: row.sourceMedium,
+          sessions: row.sessions,
+        }));
+
+        const { error } = await admin
+          .from("ga4_source_mediums")
+          .upsert(dbRows, { onConflict: "area_id,day,source_medium" });
+
+        if (error) errors.push(`ga4_source_mediums: ${error.message}`);
         else rowsWritten += dbRows.length;
       }
 
