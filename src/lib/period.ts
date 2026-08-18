@@ -55,6 +55,11 @@ function brtYmd(d: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: BRT_TZ }).format(d);
 }
 
+/** Data de hoje ("YYYY-MM-DD") no fuso de Brasília — pro carimbo de snapshots diários. */
+export function getTodayYmdBRT(reference: Date = new Date()): string {
+  return brtYmd(reference);
+}
+
 /** 0 = segunda ... 6 = domingo, no fuso de Brasília. */
 function brtWeekdayIndex(d: Date): number {
   const name = d.toLocaleDateString("en-US", { timeZone: BRT_TZ, weekday: "long" });

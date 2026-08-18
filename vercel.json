@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/weekly-report",
       "schedule": "0 9 * * 1"
+    },
+    {
+      "path": "/api/cron/ga4",
+      "schedule": "0 8 * * *"
     }
   ]
 }

@@ -1,5 +1,6 @@
 import {
   LayoutDashboard,
+  LineChart,
   Megaphone,
   Plug,
   Settings,
@@ -31,6 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/campanhas", label: "Campanhas", icon: Megaphone, section: "analise" },
   { href: "/vendas", label: "Vendas", icon: ShoppingCart, section: "analise" },
   { href: "/financeiro", label: "Financeiro", icon: Wallet, section: "analise" },
+  { href: "/ga4", label: "GA4", icon: LineChart, section: "analise" },
   { href: "/integracoes", label: "Integrações", icon: Plug, section: "operacao" },
   { href: "/regras", label: "Regras", icon: Zap, section: "operacao" },
   { href: "/configuracoes", label: "Configurações", icon: Settings, section: "operacao" },

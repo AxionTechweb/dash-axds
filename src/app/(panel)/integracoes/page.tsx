@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 import { CheckoutConnect } from "./checkout-connect";
 import { DailySheetsConnect } from "./daily-sheets-connect";
+import { Ga4Connect } from "./ga4-connect";
 import { MetaConnect, type AccountRow } from "./meta-connect";
 import { SheetsConnect } from "./sheets-connect";
 import { VturbConnect, type VturbPlayerRow } from "./vturb-connect";
@@ -48,6 +49,7 @@ export default async function IntegracoesPage() {
     { data: vturbPlayersData },
     { data: sheetsRow },
     { data: dailySheetsRow },
+    { data: ga4Row },
   ] = await Promise.all([
     supabase
       .from("meta_ad_accounts")
@@ -78,6 +80,11 @@ export default async function IntegracoesPage() {
       .select("spreadsheet_id, service_account_json, template_tab_name, enabled")
       .eq("area_id", activeArea.id)
       .maybeSingle(),
+    supabase
+      .from("ga4_integrations")
+      .select("property_id, service_account_json, enabled")
+      .eq("area_id", activeArea.id)
+      .maybeSingle(),
   ]);
 
   const accounts: AccountRow[] = (accountsData ?? []).map((row) => ({
@@ -104,6 +111,7 @@ export default async function IntegracoesPage() {
   const dailySheetsOn = Boolean(
     dailySheetsRow?.service_account_json && dailySheetsRow?.enabled !== false,
   );
+  const ga4On = Boolean(ga4Row?.service_account_json && ga4Row?.enabled !== false);
 
   const metaOn = accounts.some((a) => a.hasToken);
   const checkoutOn = configured.length > 0;
@@ -143,6 +151,12 @@ export default async function IntegracoesPage() {
         ? "Google Sheets conectado · checkpoints diários"
         : "Conectar o Google Sheets (opcional, pros checkpoints diários)",
       done: dailySheetsOn,
+    },
+    {
+      label: ga4On
+        ? "GA4 conectado · página /ga4 no painel"
+        : "Conectar o GA4 (opcional, pra página /ga4 no painel)",
+      done: ga4On,
     },
   ];
 
@@ -235,6 +249,18 @@ export default async function IntegracoesPage() {
           connected={dailySheetsOn}
           spreadsheetId={(dailySheetsRow?.spreadsheet_id as string) ?? null}
           templateTabName={(dailySheetsRow?.template_tab_name as string) ?? "TEMPLATE"}
+        />
+      </Card>
+
+      {/* 6 — GA4 (opcional) */}
+      <Card>
+        <CardHeader>
+          <CardLabel>GA4</CardLabel>
+          <span className="micro-label">página de destino · painel /ga4</span>
+        </CardHeader>
+        <Ga4Connect
+          connected={ga4On}
+          propertyId={(ga4Row?.property_id as string) ?? null}
         />
       </Card>
     </div>

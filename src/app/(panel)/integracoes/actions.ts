@@ -13,6 +13,7 @@ import {
 } from "@/lib/meta/discover";
 import { testAdAccountConnection } from "@/lib/meta/test-connection";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { testGa4Connection } from "@/lib/ga4/client";
 import { testSheetsConnection } from "@/lib/sheets/client";
 import {
   discoverVturbPlayers,
@@ -667,6 +668,71 @@ export async function saveDailyCampaignSheetsIntegration(
 
   revalidatePath("/integracoes");
   return { ok: `Conectado a "${test.title}".` };
+}
+
+/* -------------------------------------------------------------------- GA4 */
+
+/**
+ * Conexão do GA4 (página de destino, painel /ga4) — property ID (só número)
+ * + JSON da service account (pode ser a mesma do Sheets, desde que tenha a
+ * Analytics Data API ativada e acesso de Leitor à propriedade). Testa antes
+ * de salvar, mesmo raciocínio de saveSheetsIntegration.
+ */
+export async function saveGa4Integration(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const propertyId = String(formData.get("property_id") ?? "").trim();
+  const serviceAccountJson = String(formData.get("service_account_json") ?? "").trim();
+  const admin = createAdminClient();
+
+  if (!propertyId && !serviceAccountJson) {
+    const { error } = await admin.from("ga4_integrations").delete().eq("area_id", ctx.area.id);
+    if (error) return { error: `Falha ao remover: ${error.message}` };
+
+    await audit(ctx.area.id, ctx.user.email, "config.ga4_disconnect", {});
+    revalidatePath("/integracoes");
+    return { ok: "GA4 desconectado." };
+  }
+
+  if (!/^\d+$/.test(propertyId)) {
+    return { error: "ID da propriedade inválido — é só o número (sem o \"G-\")." };
+  }
+  if (!serviceAccountJson) {
+    return { error: "Cole o JSON da service account." };
+  }
+
+  try {
+    JSON.parse(serviceAccountJson);
+  } catch {
+    return { error: "JSON inválido — cole o arquivo da chave da service account inteiro." };
+  }
+
+  const test = await testGa4Connection(propertyId, serviceAccountJson);
+  if (!test.ok) {
+    return {
+      error: `Não foi possível acessar a propriedade: ${test.error}. Confirme a Analytics Data API ativada e o e-mail da service account como Leitor em Admin → Gerenciamento de acesso à propriedade.`,
+    };
+  }
+
+  const { error } = await admin.from("ga4_integrations").upsert(
+    {
+      area_id: ctx.area.id,
+      property_id: propertyId,
+      service_account_json: await encryptSecret(serviceAccountJson),
+      enabled: true,
+    },
+    { onConflict: "area_id" },
+  );
+  if (error) return { error: `Falha ao salvar: ${error.message}` };
+
+  await audit(ctx.area.id, ctx.user.email, "config.ga4_connect", { property_id: propertyId });
+
+  revalidatePath("/integracoes");
+  return { ok: "GA4 conectado." };
 }
 
 /** Testa a conexão sem salvar (botão "Testar conexão"). */

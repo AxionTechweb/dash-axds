@@ -42,6 +42,13 @@ export function withCurrencyTag(label: string, currency: string | null): string 
   return `${label} (${currency.toUpperCase()})`;
 }
 
+/** Segundos em "N min N s" (relatório de engajamento do GA4). */
+export function formatDuration(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds)) return "—";
+  const total = Math.round(seconds);
+  return `${Math.floor(total / 60)} min ${total % 60} s`;
+}
+
 /** Mascara e-mail para exibição (LGPD): "jo***@dominio.com". */
 export function maskEmail(email: string | null | undefined): string {
   if (!email) return "—";
