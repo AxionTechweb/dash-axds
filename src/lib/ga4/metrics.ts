@@ -1,16 +1,67 @@
 import "server-only";
 
-import { getGa4Integration } from "./client";
+import { getGa4Integration, type Ga4Integration } from "./client";
 import { GA4_API_BASE } from "./config";
 
 /**
- * Relatório "página de destino", últimos 28 dias — mesmo recorte que o
- * usuário já olha na UI do GA4.
+ * Relatórios do GA4, últimos 28 dias — mesmo recorte que o usuário já olha
+ * na UI do GA4. Duas visões, mesma credencial:
+ *  - "página de destino" (getLandingPageReport)
+ *  - "aquisição de tráfego" por origem da sessão (getSessionSourceReport)
  *
  * "Tempo médio de engajamento por sessão" NÃO é a métrica `averageSessionDuration`
  * da API (validado contra a propriedade real: dava um valor bem diferente do
  * mostrado na UI) — é `userEngagementDuration ÷ sessions`, calculado aqui.
  */
+
+type MetricValue = { value?: string };
+type ReportRow = {
+  dimensionValues?: { value?: string }[];
+  metricValues?: MetricValue[];
+};
+type ReportResponse = { rows?: ReportRow[]; totals?: ReportRow[] };
+
+function toNumber(v: string | undefined): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** POST genérico em `:runReport` — nunca lança, erro vira `{error}`. */
+async function runReport(
+  integration: Ga4Integration,
+  body: Record<string, unknown>,
+): Promise<{ data: ReportResponse | null; error: string | null }> {
+  try {
+    const res = await fetch(
+      `${GA4_API_BASE}/properties/${integration.propertyId}:runReport`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${integration.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      },
+    );
+
+    if (!res.ok) {
+      const errBody = (await res.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      return { data: null, error: errBody?.error?.message ?? `HTTP ${res.status}` };
+    }
+
+    return { data: (await res.json()) as ReportResponse, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err.message : "falha na requisição",
+    };
+  }
+}
+
+/* ---------------------------------------------------- página de destino */
 
 export type Ga4LandingPageRow = {
   /** "(total)" para a linha de agregado — o resto é o path da página. */
@@ -24,13 +75,7 @@ export type Ga4LandingPageRow = {
   keyEventRate: number | null;
 };
 
-type MetricValue = { value?: string };
-type ReportRow = {
-  dimensionValues?: { value?: string }[];
-  metricValues?: MetricValue[];
-};
-
-const METRICS = [
+const LANDING_PAGE_METRICS = [
   "sessions",
   "activeUsers",
   "newUsers",
@@ -39,11 +84,6 @@ const METRICS = [
   "totalRevenue",
   "sessionKeyEventRate",
 ] as const;
-
-function toNumber(v: string | undefined): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
 
 function rowToLandingPage(landingPage: string, metricValues: MetricValue[] | undefined): Ga4LandingPageRow {
   const values = metricValues ?? [];
@@ -68,52 +108,99 @@ export async function getLandingPageReport(
   const integration = await getGa4Integration(areaId);
   if (!integration) return { rows: [], errors: [] };
 
-  try {
-    const res = await fetch(
-      `${GA4_API_BASE}/properties/${integration.propertyId}:runReport`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${integration.accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
-          dimensions: [{ name: "landingPage" }],
-          metrics: METRICS.map((name) => ({ name })),
-          metricAggregations: ["TOTAL"],
-          limit: 500,
-        }),
-        cache: "no-store",
-      },
-    );
+  const { data, error } = await runReport(integration, {
+    dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
+    dimensions: [{ name: "landingPage" }],
+    metrics: LANDING_PAGE_METRICS.map((name) => ({ name })),
+    metricAggregations: ["TOTAL"],
+    limit: 500,
+  });
 
-    if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as {
-        error?: { message?: string };
-      } | null;
-      return { rows: [], errors: [body?.error?.message ?? `HTTP ${res.status}`] };
-    }
+  if (error || !data) return { rows: [], errors: [error ?? "falha desconhecida"] };
 
-    const data = (await res.json()) as {
-      rows?: ReportRow[];
-      totals?: ReportRow[];
-    };
+  const rows = (data.rows ?? []).map((row) =>
+    rowToLandingPage(row.dimensionValues?.[0]?.value ?? "(não definido)", row.metricValues),
+  );
 
-    const rows = (data.rows ?? []).map((row) =>
-      rowToLandingPage(row.dimensionValues?.[0]?.value ?? "(não definido)", row.metricValues),
-    );
+  const total = data.totals?.[0];
+  if (total) rows.unshift(rowToLandingPage("(total)", total.metricValues));
 
-    const total = data.totals?.[0];
-    if (total) {
-      rows.unshift(rowToLandingPage("(total)", total.metricValues));
-    }
+  return { rows, errors: [] };
+}
 
-    return { rows, errors: [] };
-  } catch (err) {
-    return {
-      rows: [],
-      errors: [err instanceof Error ? err.message : "falha na requisição"],
-    };
-  }
+/* ------------------------------------------------------ origem da sessão */
+
+export type Ga4SessionSourceRow = {
+  /** "(total)" para a linha de agregado — o resto é a origem (ex.: "FB"). */
+  source: string;
+  activeUsers: number;
+  sessions: number;
+  engagedSessions: number;
+  avgEngagementSeconds: number | null;
+  engagedSessionsPerUser: number | null;
+  eventsPerSession: number | null;
+  engagementRate: number | null;
+  keyEvents: number;
+  eventCount: number;
+  totalRevenue: number;
+};
+
+const SESSION_SOURCE_METRICS = [
+  "activeUsers",
+  "sessions",
+  "engagedSessions",
+  "userEngagementDuration",
+  "eventsPerSession",
+  "engagementRate",
+  "keyEvents",
+  "eventCount",
+  "totalRevenue",
+] as const;
+
+function rowToSessionSource(source: string, metricValues: MetricValue[] | undefined): Ga4SessionSourceRow {
+  const values = metricValues ?? [];
+  const activeUsers = toNumber(values[0]?.value);
+  const sessions = toNumber(values[1]?.value);
+  const engagedSessions = toNumber(values[2]?.value);
+  const userEngagementDuration = toNumber(values[3]?.value);
+
+  return {
+    source,
+    activeUsers,
+    sessions,
+    engagedSessions,
+    avgEngagementSeconds: sessions > 0 ? userEngagementDuration / sessions : null,
+    engagedSessionsPerUser: activeUsers > 0 ? engagedSessions / activeUsers : null,
+    eventsPerSession: values[4]?.value !== undefined ? toNumber(values[4]?.value) : null,
+    engagementRate: values[5]?.value !== undefined ? toNumber(values[5]?.value) : null,
+    keyEvents: toNumber(values[6]?.value),
+    eventCount: toNumber(values[7]?.value),
+    totalRevenue: toNumber(values[8]?.value),
+  };
+}
+
+export async function getSessionSourceReport(
+  areaId: string,
+): Promise<{ rows: Ga4SessionSourceRow[]; errors: string[] }> {
+  const integration = await getGa4Integration(areaId);
+  if (!integration) return { rows: [], errors: [] };
+
+  const { data, error } = await runReport(integration, {
+    dateRanges: [{ startDate: "28daysAgo", endDate: "today" }],
+    dimensions: [{ name: "sessionSource" }],
+    metrics: SESSION_SOURCE_METRICS.map((name) => ({ name })),
+    metricAggregations: ["TOTAL"],
+    limit: 500,
+  });
+
+  if (error || !data) return { rows: [], errors: [error ?? "falha desconhecida"] };
+
+  const rows = (data.rows ?? []).map((row) =>
+    rowToSessionSource(row.dimensionValues?.[0]?.value ?? "(não definido)", row.metricValues),
+  );
+
+  const total = data.totals?.[0];
+  if (total) rows.unshift(rowToSessionSource("(total)", total.metricValues));
+
+  return { rows, errors: [] };
 }
