@@ -30,6 +30,11 @@ const EventSchema = z.object({
   utm_campaign: z.string().max(255).optional().nullable(),
   utm_term: z.string().max(255).optional().nullable(),
   utm_content: z.string().max(255).optional().nullable(),
+  // URL da página onde o evento aconteceu, e os cookies próprios da Meta
+  // (_fbp/_fbc) — mandados por captura via GTM que não usa o track.js.
+  page_url: z.string().max(2048).optional().nullable(),
+  fbp: z.string().max(128).optional().nullable(),
+  fbc: z.string().max(128).optional().nullable(),
 });
 
 export async function OPTIONS(request: Request) {
@@ -75,6 +80,9 @@ export async function POST(request: Request) {
     p_geo_country: ctx.geoCountry,
     p_geo_region: ctx.geoRegion,
     p_geo_city: ctx.geoCity,
+    p_page_url: norm(body.page_url),
+    p_fbp: norm(body.fbp),
+    p_fbc: norm(body.fbc),
   });
 
   if (error) {

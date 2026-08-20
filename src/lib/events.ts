@@ -23,6 +23,7 @@ export type VisitorEvent = {
   geoCity: string | null;
   geoRegion: string | null;
   geoCountry: string | null;
+  pageUrl: string | null;
 };
 
 export type VisitorPurchase = {
@@ -64,7 +65,7 @@ export async function getVisitorJourneys(
   const { data: eventRows } = await supabase
     .from("events_log")
     .select(
-      "user_id, event_name, created_at, utm_source, utm_campaign, utm_content, geo_city, geo_region, geo_country",
+      "user_id, event_name, created_at, utm_source, utm_campaign, utm_content, geo_city, geo_region, geo_country, page_url",
     )
     .eq("area_id", areaId)
     .gte("created_at", from.toISOString())
@@ -88,6 +89,7 @@ export async function getVisitorJourneys(
       geoCity: row.geo_city as string | null,
       geoRegion: row.geo_region as string | null,
       geoCountry: row.geo_country as string | null,
+      pageUrl: row.page_url as string | null,
     });
     byUser.set(userId, list);
   }

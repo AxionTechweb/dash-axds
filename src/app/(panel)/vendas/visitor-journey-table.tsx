@@ -38,6 +38,16 @@ function fmtDateTime(iso: string): string {
   });
 }
 
+/** Caminho + query da URL, sem o domínio — o que importa pra saber em qual etapa do funil o evento aconteceu. */
+function shortPath(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.pathname}${u.search}`;
+  } catch {
+    return url;
+  }
+}
+
 export function VisitorJourneyTable({ rows }: { rows: VisitorJourney[] }) {
   const [selected, setSelected] = useState<VisitorJourney | null>(null);
 
@@ -219,6 +229,11 @@ function JourneyDialog({
                         {e.utmCampaign ? ` · camp: ${e.utmCampaign}` : ""}
                         {e.utmContent ? ` · anúncio: ${e.utmContent}` : ""}
                       </p>
+                      {e.pageUrl ? (
+                        <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground" title={e.pageUrl}>
+                          {shortPath(e.pageUrl)}
+                        </p>
+                      ) : null}
                       {e.geoCity || e.geoRegion ? (
                         <p className="text-xs text-muted-foreground">
                           {[e.geoCity, e.geoRegion, e.geoCountry].filter(Boolean).join(", ")}
