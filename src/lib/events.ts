@@ -55,6 +55,69 @@ export function isIndecisive(journey: VisitorJourney): boolean {
   return (journey.eventCounts.page_view ?? 0) >= 3 && !journey.converted;
 }
 
+function groupEventsByUser(
+  rows: {
+    user_id: string;
+    event_name: string;
+    created_at: string;
+    utm_source: string | null;
+    utm_campaign: string | null;
+    utm_content: string | null;
+    geo_city: string | null;
+    geo_region: string | null;
+    geo_country: string | null;
+    page_url: string | null;
+  }[],
+): Map<string, VisitorEvent[]> {
+  const byUser = new Map<string, VisitorEvent[]>();
+  for (const row of rows) {
+    const list = byUser.get(row.user_id) ?? [];
+    list.push({
+      eventName: row.event_name,
+      createdAt: row.created_at,
+      utmSource: row.utm_source,
+      utmCampaign: row.utm_campaign,
+      utmContent: row.utm_content,
+      geoCity: row.geo_city,
+      geoRegion: row.geo_region,
+      geoCountry: row.geo_country,
+      pageUrl: row.page_url,
+    });
+    byUser.set(row.user_id, list);
+  }
+  return byUser;
+}
+
+function groupPurchasesByUser(
+  rows: {
+    user_id: string | null;
+    produto: string | null;
+    status: string;
+    valor: number | string | null;
+    moeda: string | null;
+    created_at: string;
+  }[],
+): Map<string, VisitorPurchase[]> {
+  const byUser = new Map<string, VisitorPurchase[]>();
+  for (const row of rows) {
+    if (!row.user_id) continue;
+    const list = byUser.get(row.user_id) ?? [];
+    list.push({
+      produto: row.produto,
+      status: row.status,
+      valor: row.valor === null ? null : Number(row.valor),
+      moeda: row.moeda,
+      createdAt: row.created_at,
+    });
+    byUser.set(row.user_id, list);
+  }
+  return byUser;
+}
+
+const EVENT_COLUMNS =
+  "user_id, event_name, created_at, utm_source, utm_campaign, utm_content, geo_city, geo_region, geo_country, page_url";
+const PURCHASE_COLUMNS = "user_id, produto, status, valor, moeda, created_at";
+
 export async function getVisitorJourneys(
   areaId: string,
   from: Date,
@@ -64,9 +127,7 @@ export async function getVisitorJourneys(
 
   const { data: eventRows } = await supabase
     .from("events_log")
-    .select(
-      "user_id, event_name, created_at, utm_source, utm_campaign, utm_content, geo_city, geo_region, geo_country, page_url",
-    )
+    .select(EVENT_COLUMNS)
     .eq("area_id", areaId)
     .gte("created_at", from.toISOString())
     .lte("created_at", to.toISOString())
@@ -76,46 +137,17 @@ export async function getVisitorJourneys(
   const rows = eventRows ?? [];
   if (rows.length === 0) return [];
 
-  const byUser = new Map<string, VisitorEvent[]>();
-  for (const row of rows) {
-    const userId = row.user_id as string;
-    const list = byUser.get(userId) ?? [];
-    list.push({
-      eventName: row.event_name as string,
-      createdAt: row.created_at as string,
-      utmSource: row.utm_source as string | null,
-      utmCampaign: row.utm_campaign as string | null,
-      utmContent: row.utm_content as string | null,
-      geoCity: row.geo_city as string | null,
-      geoRegion: row.geo_region as string | null,
-      geoCountry: row.geo_country as string | null,
-      pageUrl: row.page_url as string | null,
-    });
-    byUser.set(userId, list);
-  }
+  const byUser = groupEventsByUser(rows);
 
   const userIds = [...byUser.keys()];
   const { data: purchaseRows } = await supabase
     .from("purchases")
-    .select("user_id, produto, status, valor, moeda, created_at")
+    .select(PURCHASE_COLUMNS)
     .eq("area_id", areaId)
     .in("user_id", userIds)
     .order("created_at", { ascending: true });
 
-  const purchasesByUser = new Map<string, VisitorPurchase[]>();
-  for (const row of purchaseRows ?? []) {
-    const userId = row.user_id as string | null;
-    if (!userId) continue;
-    const list = purchasesByUser.get(userId) ?? [];
-    list.push({
-      produto: row.produto as string | null,
-      status: row.status as string,
-      valor: row.valor === null ? null : Number(row.valor),
-      moeda: row.moeda as string | null,
-      createdAt: row.created_at as string,
-    });
-    purchasesByUser.set(userId, list);
-  }
+  const purchasesByUser = groupPurchasesByUser(purchaseRows ?? []);
 
   const journeys: VisitorJourney[] = [];
   for (const [userId, events] of byUser) {
@@ -150,4 +182,50 @@ export async function getVisitorJourneys(
   journeys.sort((a, b) => b.totalEvents - a.totalEvents);
 
   return journeys;
+}
+
+export type UserJourney = { events: VisitorEvent[]; purchases: VisitorPurchase[] };
+
+/**
+ * Jornada completa (SEM filtro de período — todo o histórico) de um conjunto
+ * específico de visitantes. Usada pela aba "Compras": ao abrir o detalhe de
+ * uma venda, mostra o "Mapa dos Eventos" daquele comprador, mesmo que os
+ * acessos tenham acontecido antes do período filtrado na tela.
+ */
+export async function getJourneysByUserIds(
+  areaId: string,
+  userIds: string[],
+): Promise<Map<string, UserJourney>> {
+  const ids = [...new Set(userIds)].filter(Boolean);
+  if (ids.length === 0) return new Map();
+
+  const supabase = await createClient();
+
+  const [{ data: eventRows }, { data: purchaseRows }] = await Promise.all([
+    supabase
+      .from("events_log")
+      .select(EVENT_COLUMNS)
+      .eq("area_id", areaId)
+      .in("user_id", ids)
+      .order("created_at", { ascending: true })
+      .limit(EVENTS_LIMIT),
+    supabase
+      .from("purchases")
+      .select(PURCHASE_COLUMNS)
+      .eq("area_id", areaId)
+      .in("user_id", ids)
+      .order("created_at", { ascending: true }),
+  ]);
+
+  const eventsByUser = groupEventsByUser(eventRows ?? []);
+  const purchasesByUser = groupPurchasesByUser(purchaseRows ?? []);
+
+  const result = new Map<string, UserJourney>();
+  for (const id of ids) {
+    const events = eventsByUser.get(id) ?? [];
+    const purchases = purchasesByUser.get(id) ?? [];
+    if (events.length === 0 && purchases.length === 0) continue;
+    result.set(id, { events, purchases });
+  }
+  return result;
 }

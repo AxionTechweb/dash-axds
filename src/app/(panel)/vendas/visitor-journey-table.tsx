@@ -8,45 +8,7 @@ import { cn } from "@/lib/utils";
 
 import type { VisitorJourney } from "@/lib/events";
 
-/** Cores por nome de evento — os automáticos do snippet têm cor fixa; eventos customizados (ex.: lead) caem num tom neutro. */
-const EVENT_STYLE: Record<string, string> = {
-  page_view: "bg-[hsl(var(--primary)/0.15)] text-primary",
-  view_content: "bg-[hsl(var(--accent-emerald)/0.15)] text-emerald",
-  lead: "bg-[hsl(var(--accent-purple)/0.15)] text-purple",
-  initiate_checkout: "bg-amber/15 text-amber",
-  purchase: "bg-[hsl(var(--accent-emerald)/0.2)] text-emerald",
-};
-const EVENT_STYLE_DEFAULT = "bg-muted text-muted-foreground";
-
-function EventBadge({ name, label }: { name: string; label?: string }) {
-  return (
-    <span
-      className={cn(
-        "rounded-full px-2 py-0.5 font-mono text-[0.65rem] font-medium",
-        EVENT_STYLE[name] ?? EVENT_STYLE_DEFAULT,
-      )}
-    >
-      {label ?? name}
-    </span>
-  );
-}
-
-function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
-
-/** Caminho + query da URL, sem o domínio — o que importa pra saber em qual etapa do funil o evento aconteceu. */
-function shortPath(url: string): string {
-  try {
-    const u = new URL(url);
-    return `${u.pathname}${u.search}`;
-  } catch {
-    return url;
-  }
-}
+import { buildTimeline, EventBadge, EventsTimeline, fmtDateTime, ProductsList } from "./journey-shared";
 
 export function VisitorJourneyTable({ rows }: { rows: VisitorJourney[] }) {
   const [selected, setSelected] = useState<VisitorJourney | null>(null);
@@ -163,6 +125,8 @@ function JourneyDialog({
   journey: VisitorJourney | null;
   onClose: () => void;
 }) {
+  const timeline = journey ? buildTimeline(journey.events, journey.purchases) : [];
+
   return (
     <Dialog.Root open={Boolean(journey)} onOpenChange={(v) => !v && onClose()}>
       <Dialog.Portal>
@@ -175,74 +139,8 @@ function JourneyDialog({
 
           {journey ? (
             <div className="mt-4 space-y-5">
-              {journey.purchases.length > 0 ? (
-                <div>
-                  <p className="mb-2 text-[0.62rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Produtos comprados ({journey.purchases.length})
-                  </p>
-                  <div className="space-y-2">
-                    {journey.purchases.map((p, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{p.produto ?? "—"}</p>
-                          <p className="text-xs text-muted-foreground">{fmtDateTime(p.createdAt)}</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <span
-                            className={cn(
-                              "rounded-full px-2 py-0.5 text-[0.65rem] font-medium",
-                              p.status === "approved"
-                                ? "bg-[hsl(var(--primary)/0.15)] text-primary"
-                                : "bg-muted text-muted-foreground",
-                            )}
-                          >
-                            {p.status}
-                          </span>
-                          <span className="font-mono text-sm tabular">
-                            {formatCurrency(p.valor ?? 0, p.moeda ?? "BRL")}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              <div>
-                <p className="mb-2 text-[0.62rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Histórico de eventos ({journey.events.length})
-                </p>
-                <div className="space-y-2">
-                  {journey.events.map((e, i) => (
-                    <div key={i} className="rounded-lg border border-border p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <EventBadge name={e.eventName} />
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {fmtDateTime(e.createdAt)}
-                        </span>
-                      </div>
-                      <p className="mt-1.5 text-xs text-muted-foreground">
-                        origem: {e.utmSource ?? "—"}
-                        {e.utmCampaign ? ` · camp: ${e.utmCampaign}` : ""}
-                        {e.utmContent ? ` · anúncio: ${e.utmContent}` : ""}
-                      </p>
-                      {e.pageUrl ? (
-                        <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground" title={e.pageUrl}>
-                          {shortPath(e.pageUrl)}
-                        </p>
-                      ) : null}
-                      {e.geoCity || e.geoRegion ? (
-                        <p className="text-xs text-muted-foreground">
-                          {[e.geoCity, e.geoRegion, e.geoCountry].filter(Boolean).join(", ")}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <ProductsList purchases={journey.purchases} />
+              <EventsTimeline entries={timeline} />
             </div>
           ) : null}
         </Dialog.Content>

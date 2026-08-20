@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { Card } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
-import { getVisitorJourneys, isIndecisive } from "@/lib/events";
+import { getJourneysByUserIds, getVisitorJourneys, isIndecisive } from "@/lib/events";
 import { resolvePeriod } from "@/lib/period";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
@@ -133,6 +133,10 @@ async function ComprasTab({
   const { data } = await query;
   const rows = (data ?? []) as SaleRow[];
 
+  const userIds = rows.map((r) => r.user_id).filter((id): id is string => Boolean(id));
+  const journeysMap = await getJourneysByUserIds(areaId, userIds);
+  const journeys = Object.fromEntries(journeysMap);
+
   return (
     <>
       <form className="flex flex-wrap items-center gap-2" action="/vendas">
@@ -180,7 +184,7 @@ async function ComprasTab({
       </form>
 
       <Card>
-        <SalesTable rows={rows} />
+        <SalesTable rows={rows} journeys={journeys} />
       </Card>
       <p className="text-[0.7rem] text-muted-foreground">
         Dados do comprador exibidos mascarados (LGPD). Clique numa linha para

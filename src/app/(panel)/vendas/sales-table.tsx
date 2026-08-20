@@ -4,7 +4,10 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useState } from "react";
 
 import { formatCurrency, maskEmail, maskPhone } from "@/lib/format";
+import type { UserJourney } from "@/lib/events";
 import { cn } from "@/lib/utils";
+
+import { buildTimeline, EventsTimeline, ProductsList, STATUS_LABEL, STATUS_STYLE } from "./journey-shared";
 
 export type SaleRow = {
   id: string;
@@ -28,24 +31,15 @@ export type SaleRow = {
   raw_webhook: unknown;
 };
 
-const STATUS_STYLE: Record<string, string> = {
-  approved: "bg-[hsl(var(--primary)/0.15)] text-primary",
-  pending: "bg-amber/15 text-amber",
-  refunded: "bg-muted text-muted-foreground",
-  chargeback: "bg-destructive/15 text-destructive",
-  canceled: "bg-muted text-muted-foreground",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  approved: "Aprovada",
-  pending: "Pendente",
-  refunded: "Reembolsada",
-  chargeback: "Chargeback",
-  canceled: "Cancelada",
-};
-
 /** Exibição SEMPRE mascarada (LGPD). O valor em claro fica só no banco. */
-export function SalesTable({ rows }: { rows: SaleRow[] }) {
+export function SalesTable({
+  rows,
+  journeys,
+}: {
+  rows: SaleRow[];
+  /** Jornada (eventos + compras) do visitante de cada venda, indexada por user_id — vazio quando a venda não casou com nenhum visitante. */
+  journeys: Record<string, UserJourney>;
+}) {
   const [selected, setSelected] = useState<SaleRow | null>(null);
 
   if (rows.length === 0) {
@@ -128,7 +122,11 @@ export function SalesTable({ rows }: { rows: SaleRow[] }) {
         </table>
       </div>
 
-      <SaleDialog sale={selected} onClose={() => setSelected(null)} />
+      <SaleDialog
+        sale={selected}
+        journey={selected?.user_id ? journeys[selected.user_id] : undefined}
+        onClose={() => setSelected(null)}
+      />
     </>
   );
 }
@@ -146,9 +144,11 @@ function Field({ label, value }: { label: string; value: string }) {
 
 function SaleDialog({
   sale,
+  journey,
   onClose,
 }: {
   sale: SaleRow | null;
+  journey: UserJourney | undefined;
   onClose: () => void;
 }) {
   return (
@@ -194,6 +194,27 @@ function SaleDialog({
                   <Field label="term" value={sale.utm_term ?? "—"} />
                   <Field label="content" value={sale.utm_content ?? "—"} />
                 </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-[0.62rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Mapa dos Eventos
+                </p>
+                {journey ? (
+                  <div className="space-y-4">
+                    <ProductsList purchases={journey.purchases} />
+                    <EventsTimeline
+                      entries={buildTimeline(journey.events, journey.purchases)}
+                      title="Linha do tempo"
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Essa compra não tem um visitante casado (
+                    <code className="font-mono text-foreground">match: none</code>) — sem
+                    user_id não dá pra montar a jornada.
+                  </p>
+                )}
               </div>
 
               <div>
