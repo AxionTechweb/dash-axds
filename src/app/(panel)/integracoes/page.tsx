@@ -235,8 +235,20 @@ export default async function IntegracoesPage() {
             registra os acessos e decora automaticamente o link de checkout
             (Hotmart/Kiwify) para a compra casar com esse mesmo visitante.
           </p>
+          <div className="rounded-lg border border-[hsl(var(--accent-amber)/0.25)] bg-[hsl(var(--accent-amber)/0.06)] p-3">
+            <p className="text-xs text-muted-foreground">
+              <strong className="text-foreground">
+                Seu GTM já gera um ID de visitante próprio (cookie/localStorage)?
+              </strong>{" "}
+              Não instale a tag abaixo como está — ela criaria um SEGUNDO
+              identificador, diferente do que você já usa, e os dois não vão
+              casar (page views de um lado, compra do outro). Nesse caso, o
+              ajuste certo é reaproveitar o ID que seu script já gera, não
+              instalar este aqui por cima.
+            </p>
+          </div>
           <CopyBox
-            label="Tag HTML personalizado — GTM"
+            label="Tag HTML personalizado — GTM (sem gerador de ID próprio)"
             value={
               `<script src="${baseUrl}/track.js" data-area="${publicToken}" defer>` +
               "</script>"
