@@ -76,8 +76,10 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Todas as rotas, exceto arquivos estáticos e imagens.
+     * Todas as rotas, exceto arquivos estáticos, imagens e o manifest do PWA
+     * (precisa ser servido direto — sem sessão, o navegador recebe um
+     * redirect pro /login em vez do JSON, e a instalação quebra).
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
