@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Oswald, Plus_Jakarta_Sans } from "next/font/google";
 
 import { getBranding } from "@/lib/branding";
@@ -35,9 +35,23 @@ export async function generateMetadata(): Promise<Metadata> {
       template: `%s · ${branding.product_name}`,
     },
     description: "Painel de tracking e atribuição de anúncios.",
-    ...(branding.favicon_url ? { icons: { icon: branding.favicon_url } } : {}),
+    ...(branding.favicon_url
+      ? { icons: { icon: branding.favicon_url, apple: branding.favicon_url } }
+      : {}),
+    // iOS não lê o manifest pra instalar — precisa desses meta tags próprios.
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "black-translucent",
+      title: branding.product_name,
+    },
   };
 }
+
+/** Cor da barra de status/moldura do navegador ao instalar — mesmo tom do tema escuro padrão. */
+export const viewport: Viewport = {
+  themeColor: "#030303",
+  colorScheme: "dark",
+};
 
 /**
  * Aplica o tema salvo antes da primeira pintura (evita flash).
