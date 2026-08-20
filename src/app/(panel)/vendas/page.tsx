@@ -3,11 +3,13 @@ import Link from "next/link";
 
 import { Card } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
+import { getVisitorJourneys, isIndecisive } from "@/lib/events";
 import { resolvePeriod } from "@/lib/period";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
 import { SalesTable, type SaleRow } from "./sales-table";
+import { VisitorJourneyTable } from "./visitor-journey-table";
 
 export const metadata: Metadata = { title: "Vendas" };
 export const dynamic = "force-dynamic";
@@ -20,7 +22,7 @@ type SearchParams = {
   status?: string;
   plataforma?: string;
   q?: string;
-  event?: string;
+  flag?: string;
 };
 
 function href(params: SearchParams, patch: Record<string, string>) {
@@ -92,7 +94,6 @@ export default async function VendasPage({
           params={params}
           from={period.from}
           to={period.to}
-          supabase={supabase}
         />
       )}
     </div>
@@ -194,29 +195,15 @@ async function EventosTab({
   params,
   from,
   to,
-  supabase,
 }: {
   areaId: string;
   params: SearchParams;
   from: Date;
   to: Date;
-  supabase: Supa;
 }) {
-  let query = supabase
-    .from("events_log")
-    .select(
-      "id, created_at, user_id, event_name, utm_source, utm_campaign, utm_content, geo_country, geo_region, geo_city",
-    )
-    .eq("area_id", areaId)
-    .gte("created_at", from.toISOString())
-    .lte("created_at", to.toISOString())
-    .order("created_at", { ascending: false })
-    .limit(500);
-
-  if (params.event) query = query.eq("event_name", params.event);
-
-  const { data } = await query;
-  const rows = data ?? [];
+  const journeys = await getVisitorJourneys(areaId, from, to);
+  const rows = params.flag === "indeciso" ? journeys.filter(isIndecisive) : journeys;
+  const indecisiveCount = journeys.filter(isIndecisive).length;
 
   return (
     <>
@@ -226,14 +213,15 @@ async function EventosTab({
           <input type="hidden" name="period" value={params.period} />
         ) : null}
         <select
-          name="event"
-          defaultValue={params.event ?? ""}
-          aria-label="Tipo de evento"
+          name="flag"
+          defaultValue={params.flag ?? ""}
+          aria-label="Filtro"
           className={selectClass}
         >
-          <option value="">Todos os eventos</option>
-          <option value="page_view">page_view</option>
-          <option value="initiate_checkout">initiate_checkout</option>
+          <option value="">Todos os visitantes ({journeys.length})</option>
+          <option value="indeciso">
+            Indecisos — 3+ page views sem compra ({indecisiveCount})
+          </option>
         </select>
         <button
           type="submit"
@@ -244,70 +232,12 @@ async function EventosTab({
       </form>
 
       <Card>
-        {rows.length === 0 ? (
-          <p className="p-6 text-center text-sm text-muted-foreground">
-            Nenhum evento no período. Instale o snippet nas landing pages para
-            começar a capturar.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[52rem] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left">
-                  {[
-                    "Data",
-                    "Evento",
-                    "user_id",
-                    "utm_source",
-                    "utm_campaign",
-                    "utm_content",
-                    "Região",
-                  ].map((label) => (
-                    <th
-                      key={label}
-                      className="whitespace-nowrap px-3 py-2 micro-label"
-                    >
-                      {label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {rows.map((row) => (
-                  <tr key={row.id as string} className="hover:bg-muted/40">
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-muted-foreground">
-                      {new Date(row.created_at as string).toLocaleString(
-                        "pt-BR",
-                        { dateStyle: "short", timeStyle: "short" },
-                      )}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs">
-                      {row.event_name as string}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                      {row.user_id as string}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {(row.utm_source as string) ?? "—"}
-                    </td>
-                    <td className="max-w-40 truncate px-3 py-2 text-xs text-muted-foreground">
-                      {(row.utm_campaign as string) ?? "—"}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                      {(row.utm_content as string) ?? "—"}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {[row.geo_city, row.geo_region, row.geo_country]
-                        .filter(Boolean)
-                        .join(", ") || "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <VisitorJourneyTable rows={rows} />
       </Card>
+      <p className="text-[0.7rem] text-muted-foreground">
+        Uma linha por visitante (SRC), agrupando os eventos do período. Clique
+        numa linha para ver a jornada completa.
+      </p>
     </>
   );
 }

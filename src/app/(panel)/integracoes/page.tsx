@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { CheckoutConnect } from "./checkout-connect";
 import { DailySheetsConnect } from "./daily-sheets-connect";
 import { Ga4Connect } from "./ga4-connect";
+import { CopyBox } from "./integration-forms";
 import { MetaConnect, type AccountRow } from "./meta-connect";
 import { SheetsConnect } from "./sheets-connect";
 import { VturbConnect, type VturbPlayerRow } from "./vturb-connect";
@@ -216,7 +217,43 @@ export default async function IntegracoesPage() {
         />
       </Card>
 
-      {/* 3 — Vturb (opcional) */}
+      {/* 3 — Rastreamento próprio (opcional) — vira a aba "Eventos" de /vendas */}
+      <Card>
+        <CardHeader>
+          <CardLabel>Rastreamento — jornada do lead</CardLabel>
+          <span className="micro-label">page view · checkout · aba Eventos em /vendas</span>
+        </CardHeader>
+        <div className="space-y-4 p-5">
+          <p className="text-sm text-muted-foreground">
+            Sem captura própria, a aba <strong>Eventos</strong> de{" "}
+            <strong>Vendas</strong> fica vazia — não tem como saber quantas
+            vezes um visitante entrou na página nem juntar isso com a compra.
+            Se o rastreamento é feito pelo GTM, adicione uma tag do tipo{" "}
+            <strong>HTML personalizado</strong>, gatilho{" "}
+            <strong>Todas as páginas</strong>, com o conteúdo abaixo — ele gera
+            o identificador anônimo do visitante (o &quot;SRC&quot; da jornada),
+            registra os acessos e decora automaticamente o link de checkout
+            (Hotmart/Kiwify) para a compra casar com esse mesmo visitante.
+          </p>
+          <CopyBox
+            label="Tag HTML personalizado — GTM"
+            value={
+              `<script src="${baseUrl}/track.js" data-area="${publicToken}" defer>` +
+              "</script>"
+            }
+          />
+          <p className="text-xs text-muted-foreground">
+            Eventos extras (ex.: ViewContent, Lead) podem ser disparados nos
+            gatilhos que o GTM já tem, chamando{" "}
+            <code className="font-mono text-foreground">
+              window.tracker.track(&quot;nome_do_evento&quot;)
+            </code>{" "}
+            numa tag de HTML personalizado.
+          </p>
+        </div>
+      </Card>
+
+      {/* 4 — Vturb (opcional) */}
       <Card>
         <CardHeader>
           <CardLabel>Vturb</CardLabel>
@@ -225,7 +262,7 @@ export default async function IntegracoesPage() {
         <VturbConnect players={vturbPlayers} />
       </Card>
 
-      {/* 4 — Google Sheets (opcional) */}
+      {/* 5 — Google Sheets (opcional) */}
       <Card>
         <CardHeader>
           <CardLabel>Google Sheets</CardLabel>
@@ -238,7 +275,7 @@ export default async function IntegracoesPage() {
         />
       </Card>
 
-      {/* 5 — Google Sheets: checkpoints diários (opcional) */}
+      {/* 6 — Google Sheets: checkpoints diários (opcional) */}
       <Card>
         <CardHeader>
           <CardLabel>Google Sheets — checkpoints diários</CardLabel>
@@ -252,7 +289,7 @@ export default async function IntegracoesPage() {
         />
       </Card>
 
-      {/* 6 — GA4 (opcional) */}
+      {/* 7 — GA4 (opcional) */}
       <Card>
         <CardHeader>
           <CardLabel>GA4</CardLabel>
