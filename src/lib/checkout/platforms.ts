@@ -633,6 +633,11 @@ export const CHECKOUT_PLATFORMS: CheckoutPlatform[] = [
       // Confirmado num payload real: "credit_card".
       paymentMethod: ["transaction.payment_method"],
       adId: ["link.sources.utm_content"],
+      // Confirmado em payloads reais: "link.sources.src" carrega o mesmo ID
+      // de visitante que a captura própria (GTM) grava em cookie/localStorage
+      // e decora no link do checkout — é o "SRC" usado para casar a compra
+      // com a jornada em events_log/visitors.
+      userId: ["link.sources.src"],
       utmSource: ["link.sources.utm_source"],
       utmMedium: ["link.sources.utm_medium"],
       utmCampaign: ["link.sources.utm_campaign"],
