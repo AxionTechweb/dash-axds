@@ -260,7 +260,7 @@ function RuleDialog({
                 defaultValue={rule?.action ?? "notificar"}
                 className={selectClass}
               >
-                <option value="notificar">Notificar (só registra)</option>
+                <option value="notificar">Notificar (WhatsApp, sem pausar)</option>
                 <option value="pausar">Pausar na Meta</option>
               </select>
             </div>

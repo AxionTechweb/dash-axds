@@ -15,6 +15,7 @@ import { testAdAccountConnection } from "@/lib/meta/test-connection";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { testGa4Connection } from "@/lib/ga4/client";
 import { testSheetsConnection } from "@/lib/sheets/client";
+import { testWhatsappConnection } from "@/lib/whatsapp/client";
 import {
   discoverVturbPlayers,
   type DiscoveredPlayer,
@@ -733,6 +734,74 @@ export async function saveGa4Integration(
 
   revalidatePath("/integracoes");
   return { ok: "GA4 conectado." };
+}
+
+/** WhatsApp (Evolution API) — avisos de "sem venda há 1h" e "conta desativada". */
+export async function saveWhatsappIntegration(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const baseUrl = String(formData.get("base_url") ?? "").trim();
+  const instance = String(formData.get("instance") ?? "").trim();
+  const apiKey = String(formData.get("api_key") ?? "").trim();
+  const targetNumber = String(formData.get("target_number") ?? "").trim();
+  const admin = createAdminClient();
+
+  if (!baseUrl && !instance && !apiKey && !targetNumber) {
+    const { error } = await admin.from("whatsapp_integrations").delete().eq("area_id", ctx.area.id);
+    if (error) return { error: `Falha ao remover: ${error.message}` };
+
+    await audit(ctx.area.id, ctx.user.email, "config.whatsapp_disconnect", {});
+    revalidatePath("/integracoes");
+    return { ok: "WhatsApp desconectado." };
+  }
+
+  if (!baseUrl || !instance || !targetNumber) {
+    return { error: "Preencha URL base, instância e número de destino." };
+  }
+  if (!/^https?:\/\/.+/.test(baseUrl)) {
+    return { error: "URL base inválida — precisa começar com http(s)://." };
+  }
+
+  // Reaproveita a api_key já salva quando o campo vem em branco (edição sem
+  // recolar o segredo) — mesmo padrão do restante das integrações.
+  let finalApiKey = apiKey;
+  if (!finalApiKey) {
+    const { data: existing } = await admin
+      .from("whatsapp_integrations")
+      .select("api_key")
+      .eq("area_id", ctx.area.id)
+      .maybeSingle();
+    if (!existing?.api_key) return { error: "Informe a API key." };
+    const { decryptSecret } = await import("@/lib/crypto");
+    finalApiKey = await decryptSecret(existing.api_key as string);
+  }
+
+  const test = await testWhatsappConnection(baseUrl, instance, finalApiKey);
+  if (!test.ok) {
+    return { error: `Não foi possível conectar: ${test.error}` };
+  }
+
+  const { error } = await admin.from("whatsapp_integrations").upsert(
+    {
+      area_id: ctx.area.id,
+      base_url: baseUrl,
+      instance,
+      api_key: await encryptSecret(finalApiKey),
+      target_number: targetNumber,
+      enabled: true,
+    },
+    { onConflict: "area_id" },
+  );
+  if (error) return { error: `Falha ao salvar: ${error.message}` };
+
+  await audit(ctx.area.id, ctx.user.email, "config.whatsapp_connect", { instance });
+
+  revalidatePath("/integracoes");
+  return { ok: "WhatsApp conectado." };
 }
 
 /** Testa a conexão sem salvar (botão "Testar conexão"). */

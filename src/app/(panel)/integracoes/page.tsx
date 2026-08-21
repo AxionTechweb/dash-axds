@@ -15,6 +15,7 @@ import { CopyBox } from "./integration-forms";
 import { MetaConnect, type AccountRow } from "./meta-connect";
 import { SheetsConnect } from "./sheets-connect";
 import { VturbConnect, type VturbPlayerRow } from "./vturb-connect";
+import { WhatsappConnect } from "./whatsapp-connect";
 
 export const metadata: Metadata = { title: "Integrações" };
 export const dynamic = "force-dynamic";
@@ -51,6 +52,7 @@ export default async function IntegracoesPage() {
     { data: sheetsRow },
     { data: dailySheetsRow },
     { data: ga4Row },
+    { data: whatsappRow },
   ] = await Promise.all([
     supabase
       .from("meta_ad_accounts")
@@ -86,6 +88,11 @@ export default async function IntegracoesPage() {
       .select("property_id, service_account_json, enabled")
       .eq("area_id", activeArea.id)
       .maybeSingle(),
+    supabase
+      .from("whatsapp_integrations")
+      .select("base_url, instance, api_key, target_number, enabled")
+      .eq("area_id", activeArea.id)
+      .maybeSingle(),
   ]);
 
   const accounts: AccountRow[] = (accountsData ?? []).map((row) => ({
@@ -113,6 +120,7 @@ export default async function IntegracoesPage() {
     dailySheetsRow?.service_account_json && dailySheetsRow?.enabled !== false,
   );
   const ga4On = Boolean(ga4Row?.service_account_json && ga4Row?.enabled !== false);
+  const whatsappOn = Boolean(whatsappRow?.api_key && whatsappRow?.enabled !== false);
 
   const metaOn = accounts.some((a) => a.hasToken);
   const checkoutOn = configured.length > 0;
@@ -158,6 +166,12 @@ export default async function IntegracoesPage() {
         ? "GA4 conectado · página /ga4 no painel"
         : "Conectar o GA4 (opcional, pra página /ga4 no painel)",
       done: ga4On,
+    },
+    {
+      label: whatsappOn
+        ? "WhatsApp conectado · avisos de venda/conta/regras"
+        : "Conectar o WhatsApp (opcional, pros avisos automáticos)",
+      done: whatsappOn,
     },
   ];
 
@@ -310,6 +324,20 @@ export default async function IntegracoesPage() {
         <Ga4Connect
           connected={ga4On}
           propertyId={(ga4Row?.property_id as string) ?? null}
+        />
+      </Card>
+
+      {/* 8 — WhatsApp (opcional) */}
+      <Card>
+        <CardHeader>
+          <CardLabel>WhatsApp — avisos</CardLabel>
+          <span className="micro-label">Evolution API · vendas · contas · regras</span>
+        </CardHeader>
+        <WhatsappConnect
+          connected={whatsappOn}
+          baseUrl={(whatsappRow?.base_url as string) ?? null}
+          instance={(whatsappRow?.instance as string) ?? null}
+          targetNumber={(whatsappRow?.target_number as string) ?? null}
         />
       </Card>
     </div>

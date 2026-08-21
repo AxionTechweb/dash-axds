@@ -5,6 +5,7 @@ import { getMetaEntities, type MetaLevel } from "@/lib/meta/campaigns";
 import { updateEntityStatus } from "@/lib/meta/write";
 import { resolvePeriod } from "@/lib/period";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { notifyArea } from "@/lib/whatsapp/client";
 
 /**
  * Motor das Regras de automação.
@@ -134,6 +135,27 @@ export async function runRule(
       actionTaken = result.ok ? "pausado" : "falha ao pausar";
       if (result.ok) summary.actedOn += 1;
       else summary.errors.push(`${entity.name}: ${result.error}`);
+    }
+
+    // Aviso por WhatsApp — no-op silencioso se a área não tem WhatsApp
+    // conectado (notifyArea trata isso). Mesma mensagem pros três desfechos
+    // possíveis: pausou, falhou ao pausar, ou só notificou (sem pausar).
+    const metricLabel = `${rule.metric} ${rule.operator} ${rule.value} · atual: ${actual.toFixed(2)}`;
+    if (actionTaken === "pausado") {
+      await notifyArea(
+        rule.area_id,
+        `🔴 Regra "${rule.nome}" pausou "${entity.name}" na Meta (${metricLabel}).`,
+      );
+    } else if (actionTaken === "falha ao pausar") {
+      await notifyArea(
+        rule.area_id,
+        `⚠️ Regra "${rule.nome}" tentou pausar "${entity.name}" mas falhou: ${errorMessage}.`,
+      );
+    } else {
+      await notifyArea(
+        rule.area_id,
+        `🔔 Regra "${rule.nome}": "${entity.name}" bateu a condição (${metricLabel}).`,
+      );
     }
 
     await admin.from("rule_executions").insert({

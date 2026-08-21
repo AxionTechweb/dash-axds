@@ -128,6 +128,46 @@ export async function getAdAccounts(areaId: string): Promise<AdAccount[]> {
  * Nunca lança: em caso de falha devolve zeros + a mensagem de erro, para o
  * painel continuar funcionando com os dados próprios.
  */
+/**
+ * `account_status` ATUAL de uma conta (1 = ativa) — usado pelo alerta de
+ * conta de anúncio desativada, nunca pelo carregamento normal do painel.
+ */
+export async function getAccountStatus(
+  token: string,
+  adAccountId: string,
+): Promise<{ status: number | null; name: string | null; error: string | null }> {
+  try {
+    const url =
+      `${META_GRAPH_BASE}/${normalizeAccountId(adAccountId)}` +
+      `?fields=name,account_status&access_token=${encodeURIComponent(token)}`;
+    const response = await fetch(url, { cache: "no-store" });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      return {
+        status: null,
+        name: null,
+        error: body?.error?.message ?? `HTTP ${response.status}`,
+      };
+    }
+
+    const data = (await response.json()) as { name?: string; account_status?: number };
+    return {
+      status: typeof data.account_status === "number" ? data.account_status : null,
+      name: data.name ?? null,
+      error: null,
+    };
+  } catch (err) {
+    return {
+      status: null,
+      name: null,
+      error: err instanceof Error ? err.message : "falha na requisição",
+    };
+  }
+}
+
 export async function getAreaInsights(
   areaId: string,
   from: Date,
