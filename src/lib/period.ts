@@ -108,6 +108,18 @@ export function getCheckpointDayRange(reference: Date = new Date()): CheckpointD
   return { dayStart: brtStartOfDayUtc(dayYmd), dayYmd, hour };
 }
 
+/** Dia BRT ANTERIOR completo (00:00 a 23:59:59.999) — pro sync diário da Umbler, sempre um dia fechado. */
+export function getYesterdayRangeBRT(
+  reference: Date = new Date(),
+): { from: Date; to: Date; dayYmd: string } {
+  const yesterday = new Date(reference);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const dayYmd = brtYmd(yesterday);
+  const from = brtStartOfDayUtc(dayYmd);
+  const to = new Date(from.getTime() + 86_400_000 - 1);
+  return { from, to, dayYmd };
+}
+
 export type WeekRange = {
   weekStart: Date;
   weekEnd: Date;

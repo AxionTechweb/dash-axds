@@ -15,6 +15,10 @@ import { testAdAccountConnection } from "@/lib/meta/test-connection";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { testGa4Connection } from "@/lib/ga4/client";
 import { testSheetsConnection } from "@/lib/sheets/client";
+import {
+  discoverUmblerOrganizations,
+  type UmblerOrganization,
+} from "@/lib/umbler/client";
 import { testWhatsappConnection } from "@/lib/whatsapp/client";
 import {
   discoverVturbPlayers,
@@ -802,6 +806,75 @@ export async function saveWhatsappIntegration(
 
   revalidatePath("/integracoes");
   return { ok: "WhatsApp conectado." };
+}
+
+/* ---------------------------------------------------------------- Umbler */
+
+export type DiscoverUmblerState = {
+  error?: string;
+  ok?: string;
+  organizations?: UmblerOrganization[];
+};
+
+/** Etapa 1: cola o token → lista as organizações que ele enxerga. */
+export async function discoverUmbler(
+  _prev: DiscoverUmblerState,
+  formData: FormData,
+): Promise<DiscoverUmblerState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const apiToken = String(formData.get("api_token") ?? "").trim();
+  if (!apiToken) return { error: "Cole o token da Umbler Talk." };
+
+  const result = await discoverUmblerOrganizations(apiToken);
+  if (!result.ok) return { error: result.error };
+
+  return {
+    organizations: result.organizations,
+    ok: `${result.organizations.length} organização(ões) encontrada(s).`,
+  };
+}
+
+/** Etapa 2: grava o token (cifrado) + a organização escolhida. */
+export async function saveUmblerIntegration(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const apiToken = String(formData.get("api_token") ?? "").trim();
+  const organizationId = String(formData.get("organization_id") ?? "").trim();
+
+  if (!apiToken) {
+    const admin = createAdminClient();
+    const { error } = await admin.from("umbler_integrations").delete().eq("area_id", ctx.area.id);
+    if (error) return { error: `Falha ao remover: ${error.message}` };
+
+    await audit(ctx.area.id, ctx.user.email, "config.umbler_disconnect", {});
+    revalidatePath("/integracoes");
+    return { ok: "Umbler desconectado." };
+  }
+
+  if (!organizationId) return { error: "Escolha a organização." };
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("umbler_integrations").upsert(
+    {
+      area_id: ctx.area.id,
+      api_token: await encryptSecret(apiToken),
+      organization_id: organizationId,
+      enabled: true,
+    },
+    { onConflict: "area_id" },
+  );
+  if (error) return { error: `Falha ao salvar: ${error.message}` };
+
+  await audit(ctx.area.id, ctx.user.email, "config.umbler_connect", { organization_id: organizationId });
+
+  revalidatePath("/integracoes");
+  return { ok: "Umbler conectado." };
 }
 
 /** Testa a conexão sem salvar (botão "Testar conexão"). */

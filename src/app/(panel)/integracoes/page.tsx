@@ -14,6 +14,7 @@ import { Ga4Connect } from "./ga4-connect";
 import { CopyBox } from "./integration-forms";
 import { MetaConnect, type AccountRow } from "./meta-connect";
 import { SheetsConnect } from "./sheets-connect";
+import { UmblerConnect } from "./umbler-connect";
 import { VturbConnect, type VturbPlayerRow } from "./vturb-connect";
 import { WhatsappConnect } from "./whatsapp-connect";
 
@@ -53,6 +54,7 @@ export default async function IntegracoesPage() {
     { data: dailySheetsRow },
     { data: ga4Row },
     { data: whatsappRow },
+    { data: umblerRow },
   ] = await Promise.all([
     supabase
       .from("meta_ad_accounts")
@@ -93,6 +95,11 @@ export default async function IntegracoesPage() {
       .select("base_url, instance, api_key, target_number, enabled")
       .eq("area_id", activeArea.id)
       .maybeSingle(),
+    supabase
+      .from("umbler_integrations")
+      .select("api_token, organization_id, enabled")
+      .eq("area_id", activeArea.id)
+      .maybeSingle(),
   ]);
 
   const accounts: AccountRow[] = (accountsData ?? []).map((row) => ({
@@ -121,6 +128,7 @@ export default async function IntegracoesPage() {
   );
   const ga4On = Boolean(ga4Row?.service_account_json && ga4Row?.enabled !== false);
   const whatsappOn = Boolean(whatsappRow?.api_key && whatsappRow?.enabled !== false);
+  const umblerOn = Boolean(umblerRow?.api_token && umblerRow?.enabled !== false);
 
   const metaOn = accounts.some((a) => a.hasToken);
   const checkoutOn = configured.length > 0;
@@ -172,6 +180,12 @@ export default async function IntegracoesPage() {
         ? "WhatsApp conectado · avisos de venda/conta/regras"
         : "Conectar o WhatsApp (opcional, pros avisos automáticos)",
       done: whatsappOn,
+    },
+    {
+      label: umblerOn
+        ? "Umbler Talk conectada · página /umbler no painel"
+        : "Conectar a Umbler Talk (opcional, pra página /umbler no painel)",
+      done: umblerOn,
     },
   ];
 
@@ -338,6 +352,18 @@ export default async function IntegracoesPage() {
           baseUrl={(whatsappRow?.base_url as string) ?? null}
           instance={(whatsappRow?.instance as string) ?? null}
           targetNumber={(whatsappRow?.target_number as string) ?? null}
+        />
+      </Card>
+
+      {/* 9 — Umbler Talk (opcional) */}
+      <Card>
+        <CardHeader>
+          <CardLabel>Umbler Talk</CardLabel>
+          <span className="micro-label">chats · contatos · templates · painel /umbler</span>
+        </CardHeader>
+        <UmblerConnect
+          connected={umblerOn}
+          organizationId={(umblerRow?.organization_id as string) ?? null}
         />
       </Card>
     </div>

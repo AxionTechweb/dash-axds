@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/ga4",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/umbler",
+      "schedule": "30 8 * * *"
     }
   ]
 }
