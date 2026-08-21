@@ -44,17 +44,36 @@ export type UmblerFetchResult<T> =
   | { data: T; error: null }
   | { data: null; error: string };
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Espera a janela de rate limit abrir em vez de desistir na hora — o sync
+ * diário roda vários chats em paralelo contra a MESMA chave de área, e uma
+ * rejeição imediata aqui vira uma contagem de template silenciosamente
+ * incompleta (visto numa execução real: 130+ de 199 chats rejeitados).
+ */
+async function waitForRateLimit(areaId: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const allowed = await rateLimit(
+      `umbler:${areaId}`,
+      UMBLER_RATE_LIMIT.max,
+      UMBLER_RATE_LIMIT.windowSeconds,
+    );
+    if (allowed) return true;
+    await sleep(150);
+  }
+  return false;
+}
+
 /** GET autenticado, com o organizationId sempre incluído. Nunca lança. */
 export async function umblerGet<T>(
   integration: { areaId: string; apiToken: string; organizationId: string },
   path: string,
   params: Record<string, string> = {},
 ): Promise<UmblerFetchResult<T>> {
-  const allowed = await rateLimit(
-    `umbler:${integration.areaId}`,
-    UMBLER_RATE_LIMIT.max,
-    UMBLER_RATE_LIMIT.windowSeconds,
-  );
+  const allowed = await waitForRateLimit(integration.areaId);
   if (!allowed) return { data: null, error: "rate limit interno atingido" };
 
   const qs = new URLSearchParams({ organizationId: integration.organizationId, ...params });

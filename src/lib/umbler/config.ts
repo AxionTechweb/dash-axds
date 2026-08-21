@@ -5,7 +5,9 @@
 export const UMBLER_API_BASE = "https://app-utalk.umbler.com/api";
 
 export const UMBLER_RATE_LIMIT = {
-  // A própria doc anuncia até 100 req/5s por rota; ficamos bem abaixo.
-  max: 30,
+  // A própria doc anuncia até 100 req/5s por rota; ficamos com margem.
+  // Precisa ser generoso o bastante pro sync diário (concorrência de
+  // vários chats ao mesmo tempo) não se auto-estrangular.
+  max: 80,
   windowSeconds: 5,
 };
