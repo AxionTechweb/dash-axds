@@ -15,27 +15,54 @@ import { getUmblerIntegration, umblerGet } from "@/lib/umbler/client";
  * não pode ter mensagem no dia, então é seguro excluir), depois varre as
  * mensagens de cada um filtrando por `templateId` preenchido dentro da janela
  * exata do dia.
+ *
+ * Uma conta com muitos chats pode ter centenas de chamadas (uma por chat) —
+ * sequencial isso estoura os 60s da função (visto na 1ª execução real).
+ * Corrigido com concorrência limitada + orçamento de tempo: o sync sempre
+ * retorna dentro do prazo, marcando `partial: true` se não deu tempo de
+ * varrer tudo (fica pro próximo dia, não é dado financeiro).
  */
 
 const MAX_CHAT_PAGES = 20;
 const MAX_MESSAGE_PAGES = 5;
 const PAGE_SIZE = 250;
+const CONCURRENCY = 8;
+const TIME_BUDGET_MS = 45_000;
 
 export type UmblerSyncSummary = {
   areaId: string;
   day: string;
   chatsScanned: number;
   templatesFound: number;
+  partial: boolean;
   errors: string[];
 };
 
-async function syncArea(areaId: string): Promise<UmblerSyncSummary> {
+/** Roda `worker` para cada item, no máximo `concurrency` em paralelo. */
+async function runPool<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let index = 0;
+  async function next(): Promise<void> {
+    while (index < items.length) {
+      const current = items[index];
+      index += 1;
+      await worker(current);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, next));
+}
+
+async function syncArea(areaId: string, deadline: number): Promise<UmblerSyncSummary> {
   const { from, to, dayYmd } = getYesterdayRangeBRT();
   const errors: string[] = [];
+  let partial = false;
 
   const integration = await getUmblerIntegration(areaId);
   if (!integration) {
-    return { areaId, day: dayYmd, chatsScanned: 0, templatesFound: 0, errors };
+    return { areaId, day: dayYmd, chatsScanned: 0, templatesFound: 0, partial: false, errors };
   }
 
   // Rótulo dos templates (pra não gravar só o id ilegível).
@@ -54,6 +81,11 @@ async function syncArea(areaId: string): Promise<UmblerSyncSummary> {
   const chatIds: string[] = [];
   let skip = 0;
   for (let page = 0; page < MAX_CHAT_PAGES; page += 1) {
+    if (Date.now() > deadline) {
+      partial = true;
+      errors.push("tempo esgotado ao listar chats — parcial");
+      break;
+    }
     const result = await umblerGet<{ items?: { id?: string }[] }>(integration, "/v1/chats/", {
       RelativeStartFromEventUTC: from.toISOString(),
       RelativeTakeDirection: "TakeAfter",
@@ -72,11 +104,21 @@ async function syncArea(areaId: string): Promise<UmblerSyncSummary> {
     skip += PAGE_SIZE;
   }
 
-  // Varre as mensagens de cada chat, contando os envios de template no dia.
+  // Varre as mensagens de cada chat (em paralelo, limitado), contando os
+  // envios de template no dia. Para de pegar chats NOVOS depois do prazo,
+  // mas não aborta o que já está em andamento.
   const sendsByTemplate = new Map<string, number>();
-  for (const chatId of chatIds) {
-    let cursor = from;
+  let chatsScanned = 0;
 
+  const pending = [...chatIds];
+  await runPool(pending, CONCURRENCY, async (chatId) => {
+    if (Date.now() > deadline) {
+      partial = true;
+      return;
+    }
+    chatsScanned += 1;
+
+    let cursor = from;
     for (let page = 0; page < MAX_MESSAGE_PAGES; page += 1) {
       const result = await umblerGet<{
         messages?: { templateId?: string | null; eventAtUTC?: string }[];
@@ -106,10 +148,10 @@ async function syncArea(areaId: string): Promise<UmblerSyncSummary> {
         }
       }
 
-      if (messages.length < PAGE_SIZE || !lastEventAt) break;
+      if (messages.length < PAGE_SIZE || !lastEventAt || Date.now() > deadline) break;
       cursor = new Date(lastEventAt);
     }
-  }
+  });
 
   const admin = createAdminClient();
   for (const [templateId, count] of sendsByTemplate) {
@@ -126,7 +168,7 @@ async function syncArea(areaId: string): Promise<UmblerSyncSummary> {
     if (error) errors.push(`persist ${templateId}: ${error.message}`);
   }
 
-  return { areaId, day: dayYmd, chatsScanned: chatIds.length, templatesFound: sendsByTemplate.size, errors };
+  return { areaId, day: dayYmd, chatsScanned, templatesFound: sendsByTemplate.size, partial, errors };
 }
 
 export async function runUmblerSyncForAllAreas(): Promise<UmblerSyncSummary[]> {
@@ -134,17 +176,22 @@ export async function runUmblerSyncForAllAreas(): Promise<UmblerSyncSummary[]> {
   const { data: areas } = await admin.from("areas").select("id");
   if (!areas?.length) return [];
 
+  // Orçamento único pra TODAS as áreas juntas (a função tem um limite total
+  // de execução, não por área) — cada área recebe uma fatia do que sobrar.
+  const deadline = Date.now() + TIME_BUDGET_MS;
+
   const summaries: UmblerSyncSummary[] = [];
   for (const area of areas) {
     const areaId = area.id as string;
     try {
-      summaries.push(await syncArea(areaId));
+      summaries.push(await syncArea(areaId, deadline));
     } catch (err) {
       summaries.push({
         areaId,
         day: "",
         chatsScanned: 0,
         templatesFound: 0,
+        partial: true,
         errors: [err instanceof Error ? err.message : "erro desconhecido"],
       });
     }

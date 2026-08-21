@@ -41,6 +41,7 @@ export async function GET(request: Request) {
       {
         ok: true,
         areas: summaries.length,
+        partial: summaries.some((s) => s.partial),
         chatsScanned: summaries.reduce((sum, s) => sum + s.chatsScanned, 0),
         templatesFound: summaries.reduce((sum, s) => sum + s.templatesFound, 0),
         errors: summaries.flatMap((s) => s.errors),
