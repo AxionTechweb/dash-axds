@@ -5,6 +5,7 @@ import {
   ShoppingBag,
   TriangleAlert,
   Users,
+  Wallet,
 } from "lucide-react";
 import type { Metadata } from "next";
 
@@ -22,6 +23,9 @@ import {
 
 export const metadata: Metadata = { title: "Umbler" };
 export const dynamic = "force-dynamic";
+
+/** Custo por template de WhatsApp enviado — valor fixo informado pelo usuário. */
+const TEMPLATE_COST_BRL = 0.39;
 
 const RATING_LABEL: Record<string, string> = {
   Excellent: "Excelente",
@@ -98,6 +102,8 @@ export default async function UmblerPage({
     chatSummary.uniqueContacts > 0 && conversion
       ? (conversion.matchedSales / chatSummary.uniqueContacts) * 100
       : null;
+  const totalTemplateSends = templates.reduce((sum, row) => sum + row.sends, 0);
+  const templateCost = totalTemplateSends * TEMPLATE_COST_BRL;
 
   return (
     <div className="space-y-4">
@@ -175,6 +181,13 @@ export default async function UmblerPage({
           value={conversion ? formatCurrency(conversion.matchedRevenue) : "—"}
           icon={ShoppingBag}
           accent="emerald"
+        />
+        <KpiCard
+          label="Custo estimado — templates"
+          value={formatCurrency(templateCost)}
+          icon={Wallet}
+          accent="destructive"
+          sub={`${formatNumber(totalTemplateSends)} envio(s) × ${formatCurrency(TEMPLATE_COST_BRL)}`}
         />
       </div>
 
