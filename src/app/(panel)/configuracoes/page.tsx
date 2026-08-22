@@ -1,4 +1,4 @@
-import { FolderTree } from "lucide-react";
+import { ExternalLink, FolderTree } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -7,20 +7,30 @@ import { Card } from "@/components/ui/card";
 import { getActiveArea, getAreas } from "@/lib/areas";
 import { getBranding } from "@/lib/branding";
 import { DEFAULT_SETTINGS } from "@/lib/settings";
+import { getCloudflareStatus } from "@/lib/status";
 import { createClient } from "@/lib/supabase/server";
+import { cn } from "@/lib/utils";
 
 import { AreasManager } from "./areas-manager";
 import { BrandingForm } from "./branding-form";
 import { ProductTiersManager } from "./product-tiers-manager";
 
+const CLOUDFLARE_STYLE: Record<string, string> = {
+  none: "bg-[hsl(var(--primary)/0.15)] text-primary",
+  minor: "bg-amber/15 text-amber",
+  major: "bg-destructive/15 text-destructive",
+  critical: "bg-destructive/20 text-destructive",
+};
+
 export const metadata: Metadata = { title: "Configurações" };
 export const dynamic = "force-dynamic";
 
 export default async function ConfiguracoesPage() {
-  const [areas, activeArea, branding] = await Promise.all([
+  const [areas, activeArea, branding, cloudflareStatus] = await Promise.all([
     getAreas(),
     getActiveArea(),
     getBranding(),
+    getCloudflareStatus(),
   ]);
 
   const supabase = await createClient();
@@ -154,6 +164,52 @@ export default async function ConfiguracoesPage() {
           </Card>
         </div>
       ) : null}
+
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Status dos serviços</h2>
+          <p className="text-sm text-muted-foreground">
+            Serviços externos dos quais o painel depende.
+          </p>
+        </div>
+
+        <Card className="divide-y divide-border">
+          <div className="flex items-center justify-between gap-3 p-4">
+            <div>
+              <p className="text-sm font-medium">Cloudflare</p>
+              <p className="text-xs text-muted-foreground">cloudflarestatus.com</p>
+            </div>
+            <span
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium",
+                cloudflareStatus
+                  ? (CLOUDFLARE_STYLE[cloudflareStatus.indicator] ?? "bg-muted text-muted-foreground")
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              {cloudflareStatus?.description ?? "Indisponível"}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 p-4">
+            <div>
+              <p className="text-sm font-medium">Meta</p>
+              <p className="text-xs text-muted-foreground">
+                Sem API pública — confira direto no site deles.
+              </p>
+            </div>
+            <a
+              href="https://metastatus.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium text-foreground transition-colors hover:border-[hsl(var(--primary)/0.4)]"
+            >
+              Ver status
+              <ExternalLink className="size-3" />
+            </a>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
