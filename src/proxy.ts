@@ -10,11 +10,19 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/env";
  *  1. Renovar a sessão do Supabase a cada request (cookies).
  *  2. Proteger as rotas do painel — sem sessão, redireciona para /login.
  *
- * Rotas públicas: /login, /setup e /api/* (os endpoints públicos de captura e
- * webhooks fazem a própria validação: zod + rate limit + CORS/assinatura).
+ * Rotas públicas: /login, /setup, o fluxo de redefinição de senha
+ * (/esqueci-senha, /auth/confirm, /redefinir-senha) e /api/* (os endpoints
+ * públicos de captura e webhooks fazem a própria validação: zod + rate
+ * limit + CORS/assinatura).
  */
 
-const PUBLIC_PATHS = ["/login", "/setup"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/setup",
+  "/esqueci-senha",
+  "/auth/confirm",
+  "/redefinir-senha",
+];
 
 function isPublic(pathname: string): boolean {
   if (pathname.startsWith("/api/")) return true;

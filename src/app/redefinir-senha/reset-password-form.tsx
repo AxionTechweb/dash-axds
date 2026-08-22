@@ -1,50 +1,43 @@
 "use client";
 
-import { AlertCircle, LogIn } from "lucide-react";
-import Link from "next/link";
+import { AlertCircle, KeyRound } from "lucide-react";
 import { useActionState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 
-import { signIn, type LoginState } from "./actions";
+import { updatePassword, type ResetPasswordState } from "./actions";
 
-export function LoginForm() {
-  const [state, formAction, pending] = useActionState<LoginState, FormData>(
-    signIn,
+export function ResetPasswordForm() {
+  const [state, formAction, pending] = useActionState<ResetPasswordState, FormData>(
+    updatePassword,
     {},
   );
 
   return (
     <form action={formAction} className="space-y-4">
       <div>
-        <Label htmlFor="email">E-mail</Label>
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          placeholder="voce@exemplo.com"
-        />
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="password">Senha</Label>
-          <Link
-            href="/esqueci-senha"
-            className="text-xs text-muted-foreground hover:text-primary hover:underline"
-          >
-            Esqueceu a senha?
-          </Link>
-        </div>
+        <Label htmlFor="password">Nova senha</Label>
         <Input
           id="password"
           name="password"
           type="password"
-          autoComplete="current-password"
+          autoComplete="new-password"
           required
+          minLength={8}
+          placeholder="••••••••"
+        />
+      </div>
+
+      <div>
+        <Label htmlFor="confirmPassword">Confirmar nova senha</Label>
+        <Input
+          id="confirmPassword"
+          name="confirmPassword"
+          type="password"
+          autoComplete="new-password"
+          required
+          minLength={8}
           placeholder="••••••••"
         />
       </div>
@@ -65,8 +58,8 @@ export function LoginForm() {
         disabled={pending}
         className="w-full justify-center"
       >
-        <LogIn className="size-4" />
-        {pending ? "Entrando..." : "Entrar"}
+        <KeyRound className="size-4" />
+        {pending ? "Salvando..." : "Salvar nova senha"}
       </Button>
     </form>
   );
