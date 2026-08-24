@@ -16,6 +16,10 @@ export type Settings = {
   tax_rate: number;
   revenue_goal: number;
   allowed_origins: string[];
+  /** Taxa do gateway de pagamento (ex.: PayT) sobre o faturamento — % por venda. */
+  gateway_fee_pct: number;
+  /** Taxa fixa do gateway de pagamento, por venda. */
+  gateway_fee_fixed: number;
 };
 
 export const DEFAULT_SETTINGS: Omit<Settings, "area_id"> = {
@@ -23,6 +27,8 @@ export const DEFAULT_SETTINGS: Omit<Settings, "area_id"> = {
   tax_rate: 0,
   revenue_goal: 0,
   allowed_origins: [],
+  gateway_fee_pct: 0,
+  gateway_fee_fixed: 0,
 };
 
 export const getSettings = cache(
@@ -31,7 +37,9 @@ export const getSettings = cache(
       const supabase = await createClient();
       const { data, error } = await supabase
         .from("settings")
-        .select("area_id, currency, tax_rate, revenue_goal, allowed_origins")
+        .select(
+          "area_id, currency, tax_rate, revenue_goal, allowed_origins, gateway_fee_pct, gateway_fee_fixed",
+        )
         .eq("area_id", areaId)
         .maybeSingle();
 

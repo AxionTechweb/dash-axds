@@ -64,6 +64,8 @@ export default async function DashboardPage({
   const settings = activeArea ? await getSettings(activeArea.id) : null;
   const currency = settings?.currency ?? DEFAULT_SETTINGS.currency;
   const taxRate = settings?.tax_rate ?? DEFAULT_SETTINGS.tax_rate;
+  const gatewayFeePct = settings?.gateway_fee_pct ?? DEFAULT_SETTINGS.gateway_fee_pct;
+  const gatewayFeeFixed = settings?.gateway_fee_fixed ?? DEFAULT_SETTINGS.gateway_fee_fixed;
 
   if (!activeArea) {
     return (
@@ -86,13 +88,15 @@ export default async function DashboardPage({
 
   const revenue = safeMetrics.revenue;
   const adSpend = meta.insights.spend;
-  // Lucro = Faturamento − Gasto com Ads − Imposto sobre faturamento (alíquota
-  // configurável). Conta em dólar não paga o imposto que a Meta retinha
-  // sobre contas brasileiras — sem esse desconto aqui.
-  const tax = revenue * (Number(taxRate) / 100);
-  const profit = revenue - adSpend - tax;
-
   const sales = safeMetrics.sales;
+  // Lucro = Faturamento − Gasto com Ads − Imposto sobre faturamento (alíquota
+  // configurável) − taxa do gateway de pagamento (% + fixa por venda, ex.:
+  // PayT). Conta em dólar não paga o imposto que a Meta retinha sobre contas
+  // brasileiras — sem esse desconto aqui.
+  const tax = revenue * (Number(taxRate) / 100);
+  const gatewayFees = revenue * (Number(gatewayFeePct) / 100) + Number(gatewayFeeFixed) * sales;
+  const profit = revenue - adSpend - tax - gatewayFees;
+
   const roas = adSpend > 0 ? revenue / adSpend : 0;
   const cpa = sales > 0 ? adSpend / sales : 0;
   const ticketMedio = sales > 0 ? revenue / sales : 0;
@@ -173,7 +177,7 @@ export default async function DashboardPage({
           value={formatCurrency(profit, currency)}
           icon={TrendingUp}
           accent={profit < 0 ? "destructive" : "primary"}
-          sub={`Ads ${formatCurrency(adSpend, currency)} · Imposto ${formatNumber(Number(taxRate))}% (${formatCurrency(tax, currency)})`}
+          sub={`Ads ${formatCurrency(adSpend, currency)} · Imposto ${formatNumber(Number(taxRate))}% (${formatCurrency(tax, currency)}) · Gateway ${formatCurrency(gatewayFees, currency)}`}
         />
         <KpiCard
           label="Vendas Aprovadas"
