@@ -95,9 +95,7 @@ export function SettingsForm({
 
       {/*
         Taxas do relatório semanal (Meta + Vturb + checkout, Google Sheets):
-        entram na margem líquida de cada criativo. O imposto sobre o gasto de
-        mídia já é uma constante do código (META_AD_TAX_RATE) — só o que
-        varia por instância fica aqui.
+        entram na margem líquida de cada criativo.
       */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>

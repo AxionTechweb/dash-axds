@@ -9,7 +9,6 @@ import {
   Eye,
   Filter,
   Globe2,
-  Landmark,
   ListChecks,
   Megaphone,
   MousePointer2,
@@ -41,7 +40,6 @@ import { Card } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
 import { formatCurrency, formatNumber, formatPercent, formatRoas } from "@/lib/format";
 import { getAreaInsights } from "@/lib/meta/client";
-import { META_AD_TAX_RATE } from "@/lib/meta/config";
 import {
   EMPTY_METRICS,
   getPurchaseMetrics,
@@ -88,11 +86,11 @@ export default async function DashboardPage({
 
   const revenue = safeMetrics.revenue;
   const adSpend = meta.insights.spend;
-  // Lucro = Faturamento − Gasto com Ads − Imposto da Meta (sobre o gasto) −
-  // Imposto sobre faturamento (alíquota configurável).
-  const metaTax = adSpend * META_AD_TAX_RATE;
+  // Lucro = Faturamento − Gasto com Ads − Imposto sobre faturamento (alíquota
+  // configurável). Conta em dólar não paga o imposto que a Meta retinha
+  // sobre contas brasileiras — sem esse desconto aqui.
   const tax = revenue * (Number(taxRate) / 100);
-  const profit = revenue - adSpend - metaTax - tax;
+  const profit = revenue - adSpend - tax;
 
   const sales = safeMetrics.sales;
   const roas = adSpend > 0 ? revenue / adSpend : 0;
@@ -169,14 +167,13 @@ export default async function DashboardPage({
           label="Gasto com Ads"
           value={formatCurrency(adSpend, currency)}
           icon={Megaphone}
-          sub={`+ Imposto Meta ${formatCurrency(metaTax, currency)} (${formatPercent(META_AD_TAX_RATE * 100)})`}
         />
         <KpiCard
           label="Lucro"
           value={formatCurrency(profit, currency)}
           icon={TrendingUp}
           accent={profit < 0 ? "destructive" : "primary"}
-          sub={`Ads ${formatCurrency(adSpend, currency)} · Imposto Meta ${formatCurrency(metaTax, currency)} · Imposto ${formatNumber(Number(taxRate))}% (${formatCurrency(tax, currency)})`}
+          sub={`Ads ${formatCurrency(adSpend, currency)} · Imposto ${formatNumber(Number(taxRate))}% (${formatCurrency(tax, currency)})`}
         />
         <KpiCard
           label="Vendas Aprovadas"
@@ -242,13 +239,6 @@ export default async function DashboardPage({
             icon={Undo2}
             accent="destructive"
             sub={`${formatNumber(safeMetrics.refundedCount)} reembolso${safeMetrics.refundedCount === 1 ? "" : "s"}`}
-          />
-          <KpiCard
-            label="Imposto Meta"
-            value={formatCurrency(metaTax, currency)}
-            icon={Landmark}
-            accent="destructive"
-            sub={`${formatPercent(META_AD_TAX_RATE * 100)} do gasto com Ads`}
           />
         </div>
       </div>

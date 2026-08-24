@@ -3,7 +3,6 @@ import "server-only";
 import { getWeeklySalesByAdAndTier } from "@/lib/attribution";
 import { withCurrencyTag } from "@/lib/format";
 import { getMetaEntities } from "@/lib/meta/campaigns";
-import { META_AD_TAX_RATE } from "@/lib/meta/config";
 import { getLastWeekRange } from "@/lib/period";
 import { type CreativeReportRow, writeWeeklyReportToSheet } from "@/lib/sheets/writer";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -17,9 +16,9 @@ import { getVturbByAd } from "@/lib/vturb/metrics";
  * área+semana+ad_id — reprocessar a mesma semana atualiza, não duplica).
  *
  * Mesma fórmula de lucro já usada no Dashboard (src/app/(panel)/dashboard/
- * page.tsx): receita − gasto − imposto da Meta sobre o gasto
- * (META_AD_TAX_RATE) − imposto sobre faturamento (settings.tax_rate) — aqui
- * também descontando a taxa de gateway configurável.
+ * page.tsx): receita − gasto − imposto sobre faturamento (settings.tax_rate)
+ * — aqui também descontando a taxa de gateway configurável. Sem imposto da
+ * Meta sobre o gasto: a conta é em dólar, não paga mais essa retenção.
  *
  * `campaign_id`/`campaign_name` ficam nulos nesta versão: getMetaEntities
  * agrega os insights por ad_id e não repassa a campanha de origem — dá pra
@@ -100,12 +99,11 @@ export async function buildWeeklyReport(
     const salesTotal = salesRow?.sales ?? 0;
     const revenueTotal = salesRow?.revenue ?? 0;
 
-    const metaTax = entity.spend * META_AD_TAX_RATE;
     const platformTax = revenueTotal * (settings.taxRate / 100);
     const gatewayFees =
       revenueTotal * (settings.gatewayFeePct / 100) +
       settings.gatewayFeeFixed * salesTotal;
-    const netMargin = revenueTotal - entity.spend - metaTax - platformTax - gatewayFees;
+    const netMargin = revenueTotal - entity.spend - platformTax - gatewayFees;
 
     return {
       area_id: areaId,

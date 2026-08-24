@@ -31,11 +31,3 @@ export const META_CACHE = {
   /** A partir de quantos dias atrás um período é considerado "fechado". */
   recentWindowDays: 3,
 };
-
-/**
- * Imposto que a Meta retém sobre o gasto de anúncios de contas brasileiras
- * (cobrado à parte, em cima do valor investido — não é o mesmo imposto de
- * `settings.tax_rate`, que incide sobre o faturamento). Taxa fixa combinada
- * com o usuário; não vem de nenhuma API.
- */
-export const META_AD_TAX_RATE = 0.1215;
