@@ -19,11 +19,11 @@ import { KpiCard } from "@/components/panel/kpi-card";
 import { VturbRetentionChart } from "@/components/panel/vturb-retention-chart";
 import { Card, CardHeader, CardLabel } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
-import { formatNumber, formatPercent } from "@/lib/format";
+import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { resolvePeriod } from "@/lib/period";
 import { cn } from "@/lib/utils";
 import { getVturbPlayers } from "@/lib/vturb/client";
-import { getPlayerRetentionCurve, getPlayerStats } from "@/lib/vturb/stats";
+import { getPlayerRetentionCurve, getPlayerStats, getPlayerTrafficOrigin } from "@/lib/vturb/stats";
 
 export const metadata: Metadata = { title: "Vturb" };
 export const dynamic = "force-dynamic";
@@ -65,9 +65,14 @@ export default async function VturbPage({
   const selected = players.find((p) => p.playerId === params.player) ?? players[0];
   const period = resolvePeriod(params);
 
-  const [{ stats, error: statsError }, { points, error: curveError }] = await Promise.all([
+  const [
+    { stats, error: statsError },
+    { points, error: curveError },
+    { rows: originRows, error: originError },
+  ] = await Promise.all([
     getPlayerStats(activeArea.id, selected.playerId, period.from, period.to),
     getPlayerRetentionCurve(activeArea.id, selected.playerId, period.from, period.to),
+    getPlayerTrafficOrigin(activeArea.id, selected.playerId, period.from, period.to),
   ]);
 
   const tabParams = new URLSearchParams();
@@ -209,6 +214,82 @@ export default async function VturbPage({
           <VturbRetentionChart data={points} />
         )}
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardLabel>Origem de tráfego</CardLabel>
+        </CardHeader>
+        {originError ? (
+          <p className="p-5 text-sm text-muted-foreground">
+            Não foi possível carregar a origem de tráfego: {originError}
+          </p>
+        ) : originRows.length === 0 ? (
+          <p className="p-5 text-sm text-muted-foreground">
+            Sem dados de origem de tráfego no período.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  <Th>Origem</Th>
+                  <Th align="right">Views</Th>
+                  <Th align="right">Views únicas</Th>
+                  <Th align="right">Plays</Th>
+                  <Th align="right">Play Rate</Th>
+                  <Th align="right">Conversões</Th>
+                  <Th align="right">Taxa de conversão</Th>
+                  <Th align="right">Receita</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {originRows.map((row) => (
+                  <tr key={row.source} className="hover:bg-muted/40">
+                    <td className="max-w-xs truncate px-4 py-2.5">{row.source}</td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.views)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.uniqueViews)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.plays)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.playRate !== null ? formatPercent(row.playRate, 2) : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.conversions)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.conversionRate !== null ? formatPercent(row.conversionRate, 2) : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatCurrency(row.revenue)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
+  );
+}
+
+function Th({
+  children,
+  align = "left",
+}: {
+  children: React.ReactNode;
+  align?: "left" | "right";
+}) {
+  return (
+    <th
+      className={`micro-label px-4 py-3 font-normal ${align === "right" ? "text-right" : "text-left"}`}
+    >
+      {children}
+    </th>
   );
 }

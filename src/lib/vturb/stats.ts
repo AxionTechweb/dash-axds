@@ -148,3 +148,78 @@ export async function getPlayerRetentionCurve(
 
   return { points, error: null };
 }
+
+/* -------------------------------------------------------- traffic origin */
+
+export type VturbOriginRow = {
+  source: string;
+  views: number;
+  uniqueViews: number;
+  plays: number;
+  uniquePlays: number;
+  playRate: number | null;
+  conversions: number;
+  conversionRate: number | null;
+  revenue: number;
+};
+
+type TrafficOriginStatsRow = {
+  grouped_field?: string;
+  total_viewed?: number;
+  total_viewed_session_uniq?: number;
+  total_started?: number;
+  total_started_session_uniq?: number;
+  total_conversions?: number;
+  overall_conversion_rate?: number | string | null;
+  play_rate?: number | string | null;
+  total_amount_brl?: number;
+};
+
+/**
+ * Mesmo endpoint usado no relatório semanal por criativo (`/traffic_origin/stats`),
+ * mas agrupado por `utm_source` em vez de `utm_content` — valida"do contra a
+ * API real: devolve exatamente as mesmas métricas, só que por origem
+ * ("FB", "direto", etc.) em vez de por ad_id.
+ */
+export async function getPlayerTrafficOrigin(
+  areaId: string,
+  playerId: string,
+  from: Date,
+  to: Date,
+): Promise<{ rows: VturbOriginRow[]; error: string | null }> {
+  const account = await getVturbAccount(areaId);
+  if (!account) return { rows: [], error: "Vturb não conectado nesta área." };
+
+  const discovered = await discoverVturbPlayers(areaId, account.apiKey);
+  const meta = discovered.ok ? discovered.players.find((p) => p.id === playerId) : undefined;
+
+  const result = await vturbPost<TrafficOriginStatsRow[]>(account, "/traffic_origin/stats", {
+    player_id: playerId,
+    query_key: "utm_source",
+    start_date: toVturbDateTime(from, false),
+    end_date: toVturbDateTime(to, true),
+    timezone: "America/Sao_Paulo",
+    ...(meta ? { video_duration: meta.duration, pitch_time: meta.pitchTime } : {}),
+  });
+
+  if (result.error) return { rows: [], error: result.error };
+
+  const rows: VturbOriginRow[] = (result.data ?? [])
+    .filter((row): row is TrafficOriginStatsRow & { grouped_field: string } =>
+      Boolean(row.grouped_field),
+    )
+    .map((row) => ({
+      source: row.grouped_field,
+      views: Number(row.total_viewed) || 0,
+      uniqueViews: Number(row.total_viewed_session_uniq) || 0,
+      plays: Number(row.total_started) || 0,
+      uniquePlays: Number(row.total_started_session_uniq) || 0,
+      playRate: toNumberOrNull(row.play_rate ?? null),
+      conversions: Number(row.total_conversions) || 0,
+      conversionRate: toNumberOrNull(row.overall_conversion_rate ?? null),
+      revenue: (Number(row.total_amount_brl) || 0) / 100,
+    }))
+    .sort((a, b) => b.views - a.views);
+
+  return { rows, error: null };
+}
