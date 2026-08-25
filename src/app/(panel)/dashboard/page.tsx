@@ -1,5 +1,7 @@
 import {
   Activity,
+  ArrowDownRight,
+  ArrowUpRight,
   BadgeCheck,
   BadgeDollarSign,
   Banknote,
@@ -243,6 +245,22 @@ export default async function DashboardPage({
             icon={Undo2}
             accent="destructive"
             sub={`${formatNumber(safeMetrics.refundedCount)} reembolso${safeMetrics.refundedCount === 1 ? "" : "s"}`}
+          />
+          <KpiCard
+            label="Vendas Upsell"
+            value={formatCurrency(safeMetrics.upsellRevenue, currency)}
+            icon={ArrowUpRight}
+            accent="emerald"
+            sensitive={false}
+            sub={`${formatNumber(safeMetrics.upsellCount)} venda${safeMetrics.upsellCount === 1 ? "" : "s"} (R$297)`}
+          />
+          <KpiCard
+            label="Vendas Downsell"
+            value={formatCurrency(safeMetrics.downsellRevenue, currency)}
+            icon={ArrowDownRight}
+            accent="purple"
+            sensitive={false}
+            sub={`${formatNumber(safeMetrics.downsellCount)} venda${safeMetrics.downsellCount === 1 ? "" : "s"} (R$97)`}
           />
         </div>
       </div>

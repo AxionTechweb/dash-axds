@@ -5,9 +5,16 @@ import { useState } from "react";
 
 import { formatCurrency, maskEmail, maskPhone } from "@/lib/format";
 import type { UserJourney } from "@/lib/events";
+import { classifySaleByValue, SALE_TIER_LABEL } from "@/lib/sale-value-tier";
 import { cn } from "@/lib/utils";
 
 import { buildTimeline, EventsTimeline, ProductsList, STATUS_LABEL, STATUS_STYLE } from "./journey-shared";
+
+const TIER_STYLE: Record<string, string> = {
+  upsell: "bg-[hsl(var(--accent-emerald)/0.15)] text-emerald",
+  downsell: "bg-[hsl(var(--accent-purple)/0.15)] text-purple",
+  outro: "bg-muted text-muted-foreground",
+};
 
 export type SaleRow = {
   id: string;
@@ -61,6 +68,7 @@ export function SalesTable({
                 "Produto",
                 "Comprador",
                 "Valor",
+                "Tier",
                 "Status",
                 "Plataforma",
                 "ad_id",
@@ -76,7 +84,9 @@ export function SalesTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {rows.map((row) => (
+            {rows.map((row) => {
+              const tier = classifySaleByValue(row.valor);
+              return (
               <tr
                 key={row.id}
                 onClick={() => setSelected(row)}
@@ -98,6 +108,20 @@ export function SalesTable({
                   {formatCurrency(Number(row.valor) || 0, row.moeda ?? "BRL")}
                 </td>
                 <td className="px-3 py-2">
+                  {tier === "outro" ? (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  ) : (
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[0.65rem] font-medium",
+                        TIER_STYLE[tier],
+                      )}
+                    >
+                      {SALE_TIER_LABEL[tier]}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2">
                   <span
                     className={cn(
                       "rounded-full px-2 py-0.5 text-[0.65rem] font-medium",
@@ -117,7 +141,8 @@ export function SalesTable({
                   {row.match ?? "—"}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -175,6 +200,7 @@ function SaleDialog({
                   )}
                 />
                 <Field label="Status" value={STATUS_LABEL[sale.status] ?? sale.status} />
+                <Field label="Tier" value={SALE_TIER_LABEL[classifySaleByValue(sale.valor)]} />
                 <Field label="E-mail" value={maskEmail(sale.email)} />
                 <Field label="Telefone" value={maskPhone(sale.telefone)} />
                 <Field label="Plataforma" value={sale.plataforma} />

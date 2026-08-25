@@ -1,5 +1,6 @@
 import "server-only";
 
+import { classifySaleByValue } from "@/lib/sale-value-tier";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -52,6 +53,11 @@ export type PurchaseMetrics = {
   chargebackCount: number;
   chargebackValue: number;
   pendingCount: number;
+  /** Vendas aprovadas por valor exato (R$97 = downsell, R$297 = upsell). */
+  upsellCount: number;
+  upsellRevenue: number;
+  downsellCount: number;
+  downsellRevenue: number;
   /** Faturamento por dia (o gasto é preenchido depois, com dados da Meta). */
   daily: DailyPoint[];
   regions: RegionRow[];
@@ -70,6 +76,10 @@ export const EMPTY_METRICS: PurchaseMetrics = {
   chargebackCount: 0,
   chargebackValue: 0,
   pendingCount: 0,
+  upsellCount: 0,
+  upsellRevenue: 0,
+  downsellCount: 0,
+  downsellRevenue: 0,
   daily: [],
   regions: [],
   products: [],
@@ -161,6 +171,15 @@ export async function getPurchaseMetrics(
         metrics.revenue += value;
         metrics.sales += 1;
         uniqueCustomers.add(row.email?.trim().toLowerCase() || `__no_email_${row.id}`);
+
+        const valueTier = classifySaleByValue(value);
+        if (valueTier === "upsell") {
+          metrics.upsellCount += 1;
+          metrics.upsellRevenue += value;
+        } else if (valueTier === "downsell") {
+          metrics.downsellCount += 1;
+          metrics.downsellRevenue += value;
+        }
 
         if (row.ad_id) metrics.origin.paid += 1;
         else metrics.origin.organic += 1;
