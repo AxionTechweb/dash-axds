@@ -121,12 +121,17 @@ export type CheckoutPlatform = {
   statusMap: Record<string, InternalStatus>;
 };
 
+// Duplicado de PurchaseStatus (src/lib/webhooks/status.ts) de propósito — este
+// arquivo é zero-import por design. Mudar aqui? Muda lá também (e o CHECK do
+// banco em purchases.status).
 export type InternalStatus =
   | "approved"
   | "pending"
   | "refunded"
   | "chargeback"
-  | "canceled";
+  | "canceled"
+  | "waiting_payment"
+  | "abandoned";
 
 /**
  * Status comuns a quase todas as plataformas brasileiras. Cada entrada do
@@ -146,10 +151,13 @@ const COMMON_STATUS: Record<string, InternalStatus> = {
 
   PENDING: "pending",
   PENDENTE: "pending",
-  WAITING_PAYMENT: "pending",
-  AGUARDANDO_PAGAMENTO: "pending",
   PROCESSING: "pending",
-  ABANDONED: "pending",
+
+  // Distintos de "pending" genérico — dá pra montar KPI específico de cada um.
+  WAITING_PAYMENT: "waiting_payment",
+  AGUARDANDO_PAGAMENTO: "waiting_payment",
+  ABANDONED: "abandoned",
+  LOST_CART: "abandoned",
 
   REFUNDED: "refunded",
   REEMBOLSADO: "refunded",
@@ -648,7 +656,8 @@ export const CHECKOUT_PLATFORMS: CheckoutPlatform[] = [
       ...COMMON_STATUS,
       SEPARATION: "approved",
       SHIPPED: "approved",
-      LOST_CART: "canceled",
+      // LOST_CART já vem de COMMON_STATUS como "abandoned" — confirmado pelo
+      // usuário: é o evento "Abandono de Checkout" da PayT.
       SUBSCRIPTION_CANCELED: "canceled",
       SUBSCRIPTION_RENEWED: "approved",
       SUBSCRIPTION_REACTIVATED: "approved",

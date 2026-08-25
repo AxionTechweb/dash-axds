@@ -11,17 +11,21 @@ import { cn } from "@/lib/utils";
 export const STATUS_STYLE: Record<string, string> = {
   approved: "bg-[hsl(var(--primary)/0.15)] text-primary",
   pending: "bg-amber/15 text-amber",
+  waiting_payment: "bg-amber/15 text-amber",
   refunded: "bg-muted text-muted-foreground",
   chargeback: "bg-destructive/15 text-destructive",
   canceled: "bg-muted text-muted-foreground",
+  abandoned: "bg-[hsl(var(--accent-purple)/0.15)] text-purple",
 };
 
 export const STATUS_LABEL: Record<string, string> = {
   approved: "Aprovada",
   pending: "Pendente",
+  waiting_payment: "Aguardando Pagamento",
   refunded: "Reembolsada",
   chargeback: "Chargeback",
   canceled: "Cancelada",
+  abandoned: "Abandono de Checkout",
 };
 
 /** Cores por nome de evento — os automáticos do snippet têm cor fixa; eventos customizados (ex.: lead) caem num tom neutro. */

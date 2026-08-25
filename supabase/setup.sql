@@ -1490,6 +1490,27 @@ create trigger set_updated_at
   for each row execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------
+-- 20260825120000_purchase_waiting_abandoned_status.sql
+-- ---------------------------------------------------------------------
+-- =============================================================================
+-- Novos status de compra: waiting_payment e abandoned
+-- =============================================================================
+-- O usuário ligou 2 postbacks novos na PayT: "Aguardando Pagamento"
+-- (status bruto "waiting_payment") e "Abandono de Checkout" (status bruto
+-- "lost_cart"). Os dois já eram aceitos pelo webhook, mas caíam misturados
+-- em status genéricos (pending / canceled, respectivamente) — sem KPI
+-- próprio dava pra distinguir "aguardando pagamento" de qualquer outro
+-- pendente, nem "abandonou o checkout" de qualquer outro cancelamento.
+-- =============================================================================
+
+alter table public.purchases drop constraint if exists purchases_status_check;
+alter table public.purchases add constraint purchases_status_check
+  check (status in (
+    'approved', 'pending', 'refunded', 'chargeback', 'canceled',
+    'waiting_payment', 'abandoned'
+  ));
+
+-- ---------------------------------------------------------------------
 -- Histórico de migrations: faz um futuro `supabase db push` saber que
 -- estas já foram aplicadas, evitando reaplicar tudo por cima.
 -- ---------------------------------------------------------------------
@@ -1519,7 +1540,8 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260818140000', 'ga4_source_mediums'),
   ('20260820120000', 'events_page_url_fbp_fbc'),
   ('20260820140000', 'whatsapp_alerts'),
-  ('20260821120000', 'umbler_integration')
+  ('20260821120000', 'umbler_integration'),
+  ('20260825120000', 'purchase_waiting_abandoned_status')
 on conflict (version) do nothing;
 
 commit;

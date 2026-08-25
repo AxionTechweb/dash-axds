@@ -53,6 +53,12 @@ export type PurchaseMetrics = {
   chargebackCount: number;
   chargebackValue: number;
   pendingCount: number;
+  /** Aguardando confirmação de pagamento (ex.: PayT "waiting_payment"). */
+  waitingPaymentCount: number;
+  waitingPaymentValue: number;
+  /** Abandonou o checkout antes de pagar (ex.: PayT "lost_cart"). */
+  abandonedCount: number;
+  abandonedValue: number;
   /** Vendas aprovadas por valor exato (R$97 = downsell, R$297 = upsell). */
   upsellCount: number;
   upsellRevenue: number;
@@ -76,6 +82,10 @@ export const EMPTY_METRICS: PurchaseMetrics = {
   chargebackCount: 0,
   chargebackValue: 0,
   pendingCount: 0,
+  waitingPaymentCount: 0,
+  waitingPaymentValue: 0,
+  abandonedCount: 0,
+  abandonedValue: 0,
   upsellCount: 0,
   upsellRevenue: 0,
   downsellCount: 0,
@@ -227,6 +237,14 @@ export async function getPurchaseMetrics(
         break;
       case "pending":
         metrics.pendingCount += 1;
+        break;
+      case "waiting_payment":
+        metrics.waitingPaymentCount += 1;
+        metrics.waitingPaymentValue += value;
+        break;
+      case "abandoned":
+        metrics.abandonedCount += 1;
+        metrics.abandonedValue += value;
         break;
     }
   }

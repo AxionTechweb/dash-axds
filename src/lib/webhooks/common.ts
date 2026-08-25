@@ -132,6 +132,8 @@ const PurchaseInputSchema = z.object({
     "refunded",
     "chargeback",
     "canceled",
+    "waiting_payment",
+    "abandoned",
   ]),
   userId: z.string().max(64).nullable(),
   email: z.string().max(320).nullable(),

@@ -12,6 +12,7 @@ import {
   Filter,
   Globe2,
   ListChecks,
+  LogOut,
   Megaphone,
   MousePointer2,
   MousePointerClick,
@@ -261,6 +262,22 @@ export default async function DashboardPage({
             accent="purple"
             sensitive={false}
             sub={`${formatNumber(safeMetrics.downsellCount)} venda${safeMetrics.downsellCount === 1 ? "" : "s"} (R$97)`}
+          />
+          <KpiCard
+            label="Aguardando Pagamento"
+            value={formatCurrency(safeMetrics.waitingPaymentValue, currency)}
+            icon={Clock}
+            accent="purple"
+            sensitive={false}
+            sub={`${formatNumber(safeMetrics.waitingPaymentCount)} venda${safeMetrics.waitingPaymentCount === 1 ? "" : "s"}`}
+          />
+          <KpiCard
+            label="Abandono de Checkout"
+            value={formatCurrency(safeMetrics.abandonedValue, currency)}
+            icon={LogOut}
+            accent="destructive"
+            sensitive={false}
+            sub={`${formatNumber(safeMetrics.abandonedCount)} carrinho${safeMetrics.abandonedCount === 1 ? "" : "s"}`}
           />
         </div>
       </div>

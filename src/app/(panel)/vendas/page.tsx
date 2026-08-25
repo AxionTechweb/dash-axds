@@ -161,6 +161,8 @@ async function ComprasTab({
           <option value="">Todos os status</option>
           <option value="approved">Aprovada</option>
           <option value="pending">Pendente</option>
+          <option value="waiting_payment">Aguardando Pagamento</option>
+          <option value="abandoned">Abandono de Checkout</option>
           <option value="refunded">Reembolsada</option>
           <option value="chargeback">Chargeback</option>
           <option value="canceled">Cancelada</option>

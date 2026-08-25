@@ -10,4 +10,8 @@ export type PurchaseStatus =
   | "pending"
   | "refunded"
   | "chargeback"
-  | "canceled";
+  | "canceled"
+  /** Aguardando confirmação de pagamento (ex.: PayT "waiting_payment") — distinto de "pending" genérico. */
+  | "waiting_payment"
+  /** Cliente abandonou o checkout antes de pagar (ex.: PayT "lost_cart"). */
+  | "abandoned";
