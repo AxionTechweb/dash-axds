@@ -1,6 +1,7 @@
 import "server-only";
 
 import { decryptSecret } from "@/lib/crypto";
+import { getUsdToBrlRate } from "@/lib/exchange-rate";
 import { rateLimit } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -44,12 +45,14 @@ export const EMPTY_INSIGHTS: MetaInsights = {
 
 export type MetaResult = {
   insights: MetaInsights;
-  /** Gasto por dia (YYYY-MM-DD → spend), para o gráfico. */
+  /** Gasto por dia (YYYY-MM-DD → spend), já convertido pra BRL. */
   dailySpend: Record<string, number>;
   /** Há pelo menos uma conta de anúncio configurada na área? */
   configured: boolean;
   /** Mensagens de erro por conta (exibidas discretamente no painel). */
   errors: string[];
+  /** Preenchido quando ao menos uma conta em USD foi convertida pra BRL. */
+  fx: { rate: number; usdSpend: number; updatedAt: string } | null;
 };
 
 export type AdAccount = {
@@ -185,12 +188,27 @@ export async function getAreaInsights(
       dailySpend: {},
       configured: all.length > 0,
       errors: [],
+      fx: null,
     };
   }
 
   const totals: MetaInsights = { ...EMPTY_INSIGHTS };
   const dailySpend: Record<string, number> = {};
   const errors: string[] = [];
+
+  // Conta de anúncio em dólar: converte gasto/receita pra BRL antes de somar
+  // (cada conta com a sua própria moeda — nunca aplica a taxa em cima do
+  // total já misturado). `venda` do câmbio: o que custa comprar dólar
+  // pagando em real, o lado certo pra converter uma DESPESA em dólar.
+  const hasUsdAccount = accounts.some((a) => a.currency?.toUpperCase() === "USD");
+  const rate = hasUsdAccount ? await getUsdToBrlRate() : null;
+  let usdSpendRaw = 0;
+
+  if (hasUsdAccount && !rate) {
+    errors.push(
+      "Câmbio USD→BRL indisponível — gasto/receita de conta(s) em dólar pode estar incorreto nesta carga.",
+    );
+  }
 
   for (const account of accounts) {
     if (!account.ads_token) {
@@ -218,6 +236,8 @@ export async function getAreaInsights(
     });
 
     const url = `${META_GRAPH_BASE}/${normalizeAccountId(account.ad_account_id)}/insights?${params}`;
+    const isUsd = account.currency?.toUpperCase() === "USD";
+    const fx = isUsd && rate ? rate.usdToBrl : 1;
 
     try {
       const response = await fetch(url, {
@@ -238,13 +258,17 @@ export async function getAreaInsights(
 
       for (const row of payload.data ?? []) {
         const r = row as Record<string, unknown>;
-        const spend = Number(r.spend) || 0;
+        const rawSpend = Number(r.spend) || 0;
+        const rawRevenue = sumActions(r.action_values, "purchase");
+        const spend = rawSpend * fx;
+
+        if (isUsd) usdSpendRaw += rawSpend;
 
         totals.spend += spend;
         totals.impressions += Number(r.impressions) || 0;
         totals.clicks += Number(r.clicks) || 0;
         totals.metaPurchases += sumActions(r.actions, "purchase");
-        totals.metaRevenue += sumActions(r.action_values, "purchase");
+        totals.metaRevenue += rawRevenue * fx;
         totals.initiateCheckout += sumActions(r.actions, "initiate_checkout");
         totals.landingPageView += sumActions(r.actions, "landing_page_view");
 
@@ -259,5 +283,11 @@ export async function getAreaInsights(
     }
   }
 
-  return { insights: totals, dailySpend, configured: true, errors };
+  return {
+    insights: totals,
+    dailySpend,
+    configured: true,
+    errors,
+    fx: hasUsdAccount && rate ? { rate: rate.usdToBrl, usdSpend: usdSpendRaw, updatedAt: rate.updatedAt } : null,
+  };
 }

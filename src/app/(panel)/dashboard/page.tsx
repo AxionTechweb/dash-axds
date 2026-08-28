@@ -174,6 +174,11 @@ export default async function DashboardPage({
           label="Gasto com Ads"
           value={formatCurrency(adSpend, currency)}
           icon={Megaphone}
+          sub={
+            meta.fx
+              ? `US$ ${meta.fx.usdSpend.toFixed(2)} · câmbio R$ ${meta.fx.rate.toFixed(4)}`
+              : undefined
+          }
         />
         <KpiCard
           label="Lucro"
