@@ -534,7 +534,11 @@ export async function writeWeeklyReportToSheet(
     // cabeçalho real e casar cada coluna pelo nome.
     const headerProbe = await integration.sheets.spreadsheets.values.get({
       spreadsheetId: integration.spreadsheetId,
-      range: `'${integration.templateTabName}'!A1:Z6`,
+      // ZZ cobre até 702 colunas — margem de sobra pro template crescer sem
+      // que colunas novas fiquem invisíveis pro casamento por nome (já
+      // aconteceu: com 58 colunas no template, "A1:Z6" (26) descartava tudo
+      // depois de "Data Inicial" silenciosamente).
+      range: `'${integration.templateTabName}'!A1:ZZ6`,
     });
     const probeRows = (headerProbe.data.values ?? []) as string[][];
     const header = findHeaderRow(probeRows);
