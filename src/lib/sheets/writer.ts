@@ -54,6 +54,7 @@ export type CreativeReportRow = {
   sales_downsell: number;
   revenue_downsell: number;
   sales_total: number;
+  ticket_medio: number;
   revenue_total: number;
   net_revenue: number;
   refund_value: number;
@@ -114,6 +115,7 @@ type FieldKey =
   | "sales_downsell"
   | "revenue_downsell"
   | "sales_total"
+  | "ticket_medio"
   | "revenue_total"
   | "net_revenue"
   | "refund_value"
@@ -177,6 +179,7 @@ const HEADER_ALIASES: Record<FieldKey, string[]> = {
   sales_downsell: ["vendasdownsell", "downsell"],
   revenue_downsell: ["receitadownsell"],
   sales_total: ["vendas"],
+  ticket_medio: ["ticketmedio"],
   revenue_total: ["receitabruta", "receita", "faturamento"],
   net_revenue: ["receitaliquidatotal", "receitaliquida"],
   refund_value: ["reembolso"],
@@ -349,6 +352,8 @@ function fieldValue(
       return round2(row.revenue_downsell);
     case "sales_total":
       return row.sales_total;
+    case "ticket_medio":
+      return round2(row.ticket_medio);
     case "revenue_total":
       return round2(row.revenue_total);
     case "net_revenue":
@@ -470,6 +475,8 @@ function totalsValue(
       return round2(sum((r) => r.revenue_downsell));
     case "sales_total":
       return salesTotal;
+    case "ticket_medio":
+      return salesTotal > 0 ? round2(revenueTotal / salesTotal) : "";
     case "revenue_total":
       return round2(revenueTotal);
     case "net_revenue":

@@ -177,6 +177,7 @@ export async function buildWeeklyReport(
       sales_downsell: salesRow?.byTier.downsell.sales ?? 0,
       revenue_downsell: salesRow?.byTier.downsell.revenue ?? 0,
       sales_total: salesTotal,
+      ticket_medio: salesTotal > 0 ? grossRevenue / salesTotal : 0,
       revenue_total: grossRevenue,
       net_revenue: netRevenue,
       refund_value: salesRow?.refundValue ?? 0,
@@ -222,7 +223,7 @@ const CREATIVE_REPORT_SHEET_COLUMNS =
   "cta_clicks, vturb_views, vturb_unique_views, vturb_conversions, vturb_revenue, " +
   "retention_25, retention_50, retention_75, avg_watch_seconds, " +
   "sales_vd, revenue_vd, sales_upsell, revenue_upsell, sales_downsell, revenue_downsell, " +
-  "sales_total, revenue_total, net_revenue, refund_value, chargeback_value, " +
+  "sales_total, ticket_medio, revenue_total, net_revenue, refund_value, chargeback_value, " +
   "canceled_count, unique_buyers, " +
   "roas, cpa, cac, arpu, rpv, conversion_rate, pv_ic_rate, checkout_rate, " +
   "net_margin, profit_margin_pct, delta_meta_vs_own";

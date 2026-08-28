@@ -1563,6 +1563,18 @@ alter table public.creative_reports
   alter column retention_50 type numeric(7,4),
   alter column retention_75 type numeric(7,4);
 
+-- =============================================================================
+-- 20260828120200_add_ticket_medio_column.sql
+-- =============================================================================
+-- Coluna esquecida na primeira leva (20260828120000): "Ticket Médio" tinha
+-- header na planilha mas nenhum campo correspondente no writer, e por causa
+-- disso o alias curto "ic" (initiate_checkout) batia como substring dentro
+-- de "ticketmedio" e a coluna mostrava o valor de IC por engano.
+-- =============================================================================
+
+alter table public.creative_reports
+  add column if not exists ticket_medio numeric(14,2);
+
 -- ---------------------------------------------------------------------
 -- Histórico de migrations: faz um futuro `supabase db push` saber que
 -- estas já foram aplicadas, evitando reaplicar tudo por cima.
@@ -1596,7 +1608,8 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260821120000', 'umbler_integration'),
   ('20260825120000', 'purchase_waiting_abandoned_status'),
   ('20260828120000', 'creative_reports_extra_columns'),
-  ('20260828120100', 'fix_retention_columns_precision')
+  ('20260828120100', 'fix_retention_columns_precision'),
+  ('20260828120200', 'add_ticket_medio_column')
 on conflict (version) do nothing;
 
 commit;
