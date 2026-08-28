@@ -59,6 +59,7 @@ type FieldKey =
   | "impressions"
   | "cpm"
   | "ctr"
+  | "cpc"
   | "clicks"
   | "page_views"
   | "hook_rate"
@@ -87,6 +88,7 @@ const HEADER_ALIASES: Record<FieldKey, string[]> = {
   impressions: ["impressoes"],
   cpm: ["cpm"],
   ctr: ["ctr"],
+  cpc: ["cpc"],
   clicks: ["cliques"],
   page_views: ["pageviews", "visualizacoesdepagina", "pv"],
   hook_rate: ["hookrate"],
@@ -178,6 +180,7 @@ function fieldValue(
 
   const cpm = row.impressions > 0 ? round2((row.spend / row.impressions) * 1000) : "";
   const ctr = row.impressions > 0 ? round2((row.clicks / row.impressions) * 100) : "";
+  const cpc = row.clicks > 0 ? round2(row.spend / row.clicks) : "";
 
   switch (field) {
     case "index":
@@ -196,6 +199,8 @@ function fieldValue(
       return cpm;
     case "ctr":
       return ctr;
+    case "cpc":
+      return cpc;
     case "clicks":
       return row.clicks;
     case "page_views":
@@ -265,6 +270,8 @@ function totalsValue(
       return impressions > 0 ? round2((spend / impressions) * 1000) : "";
     case "ctr":
       return impressions > 0 ? round2((clicks / impressions) * 100) : "";
+    case "cpc":
+      return clicks > 0 ? round2(spend / clicks) : "";
     case "clicks":
       return clicks;
     case "page_views":
