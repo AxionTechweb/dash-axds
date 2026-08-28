@@ -1547,6 +1547,22 @@ alter table public.creative_reports
   add column if not exists pv_ic_rate             numeric(7,4),
   add column if not exists checkout_rate          numeric(7,4);
 
+-- =============================================================================
+-- 20260828120100_fix_retention_columns_precision.sql
+-- =============================================================================
+-- Corrige overflow em retention_25/50/75 (mesmo bug já visto em
+-- hook_rate/play_rate/pitch_retention, 20260810120000): um criativo com
+-- poucas sessões pode chegar a EXATAMENTE 100% de retenção num ponto do
+-- vídeo, e "numeric(6,4)" só suporta até 99.9999 (2 dígitos antes da
+-- vírgula) — 100.0000 estoura e derruba o upsert inteiro em creative_reports.
+-- numeric(7,4) dá margem até 999.9999, de sobra pra uma taxa 0–100.
+-- =============================================================================
+
+alter table public.creative_reports
+  alter column retention_25 type numeric(7,4),
+  alter column retention_50 type numeric(7,4),
+  alter column retention_75 type numeric(7,4);
+
 -- ---------------------------------------------------------------------
 -- Histórico de migrations: faz um futuro `supabase db push` saber que
 -- estas já foram aplicadas, evitando reaplicar tudo por cima.
@@ -1579,7 +1595,8 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260820140000', 'whatsapp_alerts'),
   ('20260821120000', 'umbler_integration'),
   ('20260825120000', 'purchase_waiting_abandoned_status'),
-  ('20260828120000', 'creative_reports_extra_columns')
+  ('20260828120000', 'creative_reports_extra_columns'),
+  ('20260828120100', 'fix_retention_columns_precision')
 on conflict (version) do nothing;
 
 commit;
