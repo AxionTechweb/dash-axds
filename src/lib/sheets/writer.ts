@@ -20,11 +20,15 @@ import { ensureTabFromTemplate, getSheetsIntegration } from "./client";
  */
 
 export type CreativeReportRow = {
+  week_start: string;
+  week_end: string;
   account_label: string | null;
   ad_id: string;
   ad_name: string | null;
+  campaign_name: string | null;
   status: string | null;
   spend: number;
+  spend_usd: number | null;
   impressions: number;
   clicks: number;
   page_views: number;
@@ -35,14 +39,37 @@ export type CreativeReportRow = {
   play_rate: number | null;
   pitch_retention: number | null;
   cta_clicks: number | null;
+  vturb_views: number | null;
+  vturb_unique_views: number | null;
+  vturb_conversions: number | null;
+  vturb_revenue: number | null;
+  retention_25: number | null;
+  retention_50: number | null;
+  retention_75: number | null;
+  avg_watch_seconds: number | null;
   sales_vd: number;
+  revenue_vd: number;
   sales_upsell: number;
+  revenue_upsell: number;
   sales_downsell: number;
+  revenue_downsell: number;
   sales_total: number;
   revenue_total: number;
+  net_revenue: number;
+  refund_value: number;
+  chargeback_value: number;
+  canceled_count: number;
+  unique_buyers: number;
   roas: number;
+  cpa: number;
   cac: number;
+  arpu: number;
+  rpv: number;
+  conversion_rate: number;
+  pv_ic_rate: number;
+  checkout_rate: number;
   net_margin: number;
+  profit_margin_pct: number;
   delta_meta_vs_own: number | null;
 };
 
@@ -52,10 +79,15 @@ export type WriteWeeklyReportResult =
 
 type FieldKey =
   | "index"
+  | "week_start"
+  | "week_end"
   | "account_label"
+  | "ad_id_col"
   | "ad_name"
+  | "campaign_name"
   | "status"
   | "spend"
+  | "spend_usd"
   | "impressions"
   | "cpm"
   | "ctr"
@@ -63,28 +95,62 @@ type FieldKey =
   | "clicks"
   | "page_views"
   | "hook_rate"
+  | "retention_25"
+  | "retention_50"
+  | "retention_75"
+  | "avg_watch_seconds"
   | "plays"
   | "play_rate"
   | "pitch_retention"
   | "cta_clicks"
+  | "vturb_unique_views"
+  | "vturb_conversions"
   | "initiate_checkout"
   | "meta_purchases"
   | "sales_vd"
+  | "revenue_vd"
   | "sales_upsell"
+  | "revenue_upsell"
   | "sales_downsell"
+  | "revenue_downsell"
+  | "sales_total"
   | "revenue_total"
+  | "net_revenue"
+  | "refund_value"
+  | "chargeback_value"
+  | "canceled_count"
+  | "unique_buyers"
   | "roas"
+  | "cpa"
   | "cac"
+  | "arpu"
+  | "rpv"
+  | "conversion_rate"
+  | "pv_ic_rate"
+  | "checkout_rate"
   | "net_margin"
+  | "profit_margin_pct"
   | "delta_meta_vs_own";
 
-/** Aliases normalizados (sem acento/espaço/pontuação, minúsculo) por campo. */
+/**
+ * Aliases normalizados (sem acento/espaço/pontuação, minúsculo) por campo.
+ * Sempre inclui o texto TOTALMENTE normalizado do cabeçalho da planilha
+ * manual ("Consolidado SG Global") como alias exato — a fase de match exato
+ * roda ANTES da fase de substring (`matchField`), então isso evita colisão
+ * mesmo quando um alias é substring de outro (ex.: "vendas" dentro de
+ * "vendasfront").
+ */
 const HEADER_ALIASES: Record<FieldKey, string[]> = {
   index: ["#", "n", "no", "num", "numero"],
+  week_start: ["datainicial"],
+  week_end: ["datafinal"],
   account_label: ["conta"],
+  ad_id_col: ["iddocriativo", "idcriativo", "idanuncio"],
   ad_name: ["criativo", "anuncio", "ad", "nome"],
+  campaign_name: ["campanha"],
   status: ["status"],
   spend: ["gasto", "investimento"],
+  spend_usd: ["spend"],
   impressions: ["impressoes"],
   cpm: ["cpm"],
   ctr: ["ctr"],
@@ -92,19 +158,41 @@ const HEADER_ALIASES: Record<FieldKey, string[]> = {
   clicks: ["cliques"],
   page_views: ["pageviews", "visualizacoesdepagina", "pv"],
   hook_rate: ["hookrate"],
+  retention_25: ["ret25"],
+  retention_50: ["ret50"],
+  retention_75: ["ret75"],
+  avg_watch_seconds: ["tempomedio"],
   plays: ["plays", "reproducoes"],
   play_rate: ["playrate"],
-  pitch_retention: ["retpitch", "retencaopitch", "pitchretention", "retencao"],
+  pitch_retention: ["retpitch", "retencaopitch", "pitchretention", "retencaodepitch", "retencao"],
   cta_clicks: ["btnvsl", "cliquescta", "cta", "botaovsl"],
+  vturb_unique_views: ["visunicas", "visualizacoesunicas"],
+  vturb_conversions: ["conversoesvturb"],
   initiate_checkout: ["ic", "iniciarcheckout", "initiatecheckout"],
   meta_purchases: ["comprasmeta"],
-  sales_vd: ["vd", "vdpayt"],
-  sales_upsell: ["upsell"],
-  sales_downsell: ["downsell"],
-  revenue_total: ["receita", "faturamento"],
+  sales_vd: ["vendasfront", "vd", "vdpayt"],
+  revenue_vd: ["receitafront"],
+  sales_upsell: ["vendasupsell", "upsell"],
+  revenue_upsell: ["receitaupsell"],
+  sales_downsell: ["vendasdownsell", "downsell"],
+  revenue_downsell: ["receitadownsell"],
+  sales_total: ["vendas"],
+  revenue_total: ["receitabruta", "receita", "faturamento"],
+  net_revenue: ["receitaliquidatotal", "receitaliquida"],
+  refund_value: ["reembolso"],
+  chargeback_value: ["chargeback"],
+  canceled_count: ["canceladas"],
+  unique_buyers: ["compradoresunicos"],
   roas: ["roas"],
+  cpa: ["cpa"],
   cac: ["cac"],
+  arpu: ["arpu"],
+  rpv: ["rpv"],
+  conversion_rate: ["taxadeconversao"],
+  pv_ic_rate: ["convpvic"],
+  checkout_rate: ["convcheckout"],
   net_margin: ["margemvsbe", "margemliquida", "margem", "lucro"],
+  profit_margin_pct: ["margemdelucro"],
   delta_meta_vs_own: ["deltametaproprio", "deltametapayt", "deltameta", "delta"],
 };
 
@@ -162,6 +250,12 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/** "2026-08-17" → "17/08/2026" (data-only, sem depender do fuso do runtime). */
+function formatYmd(ymd: string): string {
+  const [y, m, d] = ymd.split("-");
+  return `${d}/${m}/${y}`;
+}
+
 /** "27.07.2026–02.08.2026" — sem "/" (proibido em nome de aba do Sheets). */
 function tabNameFor(weekStartYmd: string, weekEndYmd: string): string {
   const fmt = (ymd: string) => {
@@ -185,14 +279,24 @@ function fieldValue(
   switch (field) {
     case "index":
       return index + 1;
+    case "week_start":
+      return formatYmd(row.week_start);
+    case "week_end":
+      return formatYmd(row.week_end);
     case "account_label":
       return row.account_label ?? "";
+    case "ad_id_col":
+      return row.ad_id;
     case "ad_name":
       return row.ad_name ?? row.ad_id;
+    case "campaign_name":
+      return row.campaign_name ?? "";
     case "status":
       return row.status ?? "";
     case "spend":
       return round2(row.spend);
+    case "spend_usd":
+      return row.spend_usd !== null ? round2(row.spend_usd) : "";
     case "impressions":
       return row.impressions;
     case "cpm":
@@ -207,6 +311,14 @@ function fieldValue(
       return row.page_views;
     case "hook_rate":
       return row.hook_rate ?? "";
+    case "retention_25":
+      return row.retention_25 !== null ? round2(row.retention_25) : "";
+    case "retention_50":
+      return row.retention_50 !== null ? round2(row.retention_50) : "";
+    case "retention_75":
+      return row.retention_75 !== null ? round2(row.retention_75) : "";
+    case "avg_watch_seconds":
+      return row.avg_watch_seconds !== null ? round2(row.avg_watch_seconds) : "";
     case "plays":
       return row.plays ?? "";
     case "play_rate":
@@ -215,24 +327,60 @@ function fieldValue(
       return row.pitch_retention ?? "";
     case "cta_clicks":
       return row.cta_clicks ?? "";
+    case "vturb_unique_views":
+      return row.vturb_unique_views ?? "";
+    case "vturb_conversions":
+      return row.vturb_conversions ?? "";
     case "initiate_checkout":
       return row.initiate_checkout;
     case "meta_purchases":
       return row.meta_purchases;
     case "sales_vd":
       return row.sales_vd;
+    case "revenue_vd":
+      return round2(row.revenue_vd);
     case "sales_upsell":
       return row.sales_upsell;
+    case "revenue_upsell":
+      return round2(row.revenue_upsell);
     case "sales_downsell":
       return row.sales_downsell;
+    case "revenue_downsell":
+      return round2(row.revenue_downsell);
+    case "sales_total":
+      return row.sales_total;
     case "revenue_total":
       return round2(row.revenue_total);
+    case "net_revenue":
+      return round2(row.net_revenue);
+    case "refund_value":
+      return round2(row.refund_value);
+    case "chargeback_value":
+      return round2(row.chargeback_value);
+    case "canceled_count":
+      return row.canceled_count;
+    case "unique_buyers":
+      return row.unique_buyers;
     case "roas":
       return round2(row.roas);
+    case "cpa":
+      return round2(row.cpa);
     case "cac":
       return round2(row.cac);
+    case "arpu":
+      return round2(row.arpu);
+    case "rpv":
+      return round2(row.rpv);
+    case "conversion_rate":
+      return round2(row.conversion_rate);
+    case "pv_ic_rate":
+      return round2(row.pv_ic_rate);
+    case "checkout_rate":
+      return round2(row.checkout_rate);
     case "net_margin":
       return round2(row.net_margin);
+    case "profit_margin_pct":
+      return round2(row.profit_margin_pct);
     case "delta_meta_vs_own":
       return row.delta_meta_vs_own ?? "";
   }
@@ -252,9 +400,19 @@ function totalsValue(
   const clicks = sum((r) => r.clicks);
   const revenueTotal = sum((r) => r.revenue_total);
   const salesTotal = sum((r) => r.sales_total);
+  const initiateCheckout = sum((r) => r.initiate_checkout);
+  const pageViews = sum((r) => r.page_views);
+  const uniqueBuyers = sum((r) => r.unique_buyers);
+  const vturbUniqueViews = sum((r) => r.vturb_unique_views);
+  const netMargin = sum((r) => r.net_margin);
 
   switch (field) {
     case "index":
+      return "";
+    case "week_start":
+    case "week_end":
+    case "ad_id_col":
+    case "campaign_name":
       return "";
     case "account_label":
       return "TOTAL";
@@ -264,6 +422,8 @@ function totalsValue(
       return "";
     case "spend":
       return round2(spend);
+    case "spend_usd":
+      return round2(sum((r) => r.spend_usd));
     case "impressions":
       return impressions;
     case "cpm":
@@ -275,33 +435,73 @@ function totalsValue(
     case "clicks":
       return clicks;
     case "page_views":
-      return sum((r) => r.page_views);
+      return pageViews;
     case "hook_rate":
     case "play_rate":
     case "pitch_retention":
+    case "retention_25":
+    case "retention_50":
+    case "retention_75":
+    case "avg_watch_seconds":
       return ""; // médias ponderadas não têm uma soma que faça sentido aqui
     case "plays":
       return sum((r) => r.plays);
     case "cta_clicks":
       return sum((r) => r.cta_clicks);
+    case "vturb_unique_views":
+      return vturbUniqueViews;
+    case "vturb_conversions":
+      return sum((r) => r.vturb_conversions);
     case "initiate_checkout":
-      return sum((r) => r.initiate_checkout);
+      return initiateCheckout;
     case "meta_purchases":
       return sum((r) => r.meta_purchases);
     case "sales_vd":
       return sum((r) => r.sales_vd);
+    case "revenue_vd":
+      return round2(sum((r) => r.revenue_vd));
     case "sales_upsell":
       return sum((r) => r.sales_upsell);
+    case "revenue_upsell":
+      return round2(sum((r) => r.revenue_upsell));
     case "sales_downsell":
       return sum((r) => r.sales_downsell);
+    case "revenue_downsell":
+      return round2(sum((r) => r.revenue_downsell));
+    case "sales_total":
+      return salesTotal;
     case "revenue_total":
       return round2(revenueTotal);
+    case "net_revenue":
+      return round2(sum((r) => r.net_revenue));
+    case "refund_value":
+      return round2(sum((r) => r.refund_value));
+    case "chargeback_value":
+      return round2(sum((r) => r.chargeback_value));
+    case "canceled_count":
+      return sum((r) => r.canceled_count);
+    case "unique_buyers":
+      return uniqueBuyers;
     case "roas":
       return spend > 0 ? round2(revenueTotal / spend) : "";
-    case "cac":
+    case "cpa":
       return salesTotal > 0 ? round2(spend / salesTotal) : "";
+    case "cac":
+      return uniqueBuyers > 0 ? round2(spend / uniqueBuyers) : "";
+    case "arpu":
+      return uniqueBuyers > 0 ? round2(revenueTotal / uniqueBuyers) : "";
+    case "rpv":
+      return vturbUniqueViews > 0 ? round2(revenueTotal / vturbUniqueViews) : "";
+    case "conversion_rate":
+      return clicks > 0 ? round2((salesTotal / clicks) * 100) : "";
+    case "pv_ic_rate":
+      return pageViews > 0 ? round2((initiateCheckout / pageViews) * 100) : "";
+    case "checkout_rate":
+      return initiateCheckout > 0 ? round2((salesTotal / initiateCheckout) * 100) : "";
     case "net_margin":
-      return round2(sum((r) => r.net_margin));
+      return round2(netMargin);
+    case "profit_margin_pct":
+      return revenueTotal > 0 ? round2((netMargin / revenueTotal) * 100) : "";
     case "delta_meta_vs_own":
       return sum((r) => r.delta_meta_vs_own);
   }

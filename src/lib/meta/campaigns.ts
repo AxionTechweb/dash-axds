@@ -34,6 +34,8 @@ export type MetaEntity = {
   accountLabel: string;
   /** Moeda da conta (ex.: "BRL", "USD") — spend/revenue vêm crus, sem conversão. */
   accountCurrency: string | null;
+  /** Nome da campanha de origem (só relevante no nível "ad" — mesma campanha em todas as linhas do insight). */
+  campaignName: string | null;
   spend: number;
   impressions: number;
   clicks: number;
@@ -203,6 +205,7 @@ export async function getMetaEntities(
       if (typeof id !== "string") continue;
 
       const entry = aggregated.get(id) ?? {
+        campaignName: null,
         spend: 0,
         impressions: 0,
         clicks: 0,
@@ -220,6 +223,9 @@ export async function getMetaEntities(
       entry.metaRevenue += sumActions(row.action_values, "purchase");
       entry.metaInitiateCheckout += sumActions(row.actions, "initiate_checkout");
       entry.metaLandingPageView += sumActions(row.actions, "landing_page_view");
+      if (!entry.campaignName && typeof row.campaign_name === "string") {
+        entry.campaignName = row.campaign_name;
+      }
 
       const adId = row.ad_id;
       if (typeof adId === "string" && !entry.adIds.includes(adId)) {
@@ -235,6 +241,7 @@ export async function getMetaEntities(
       if (typeof id !== "string") continue;
 
       const metrics = aggregated.get(id) ?? {
+        campaignName: null,
         spend: 0,
         impressions: 0,
         clicks: 0,

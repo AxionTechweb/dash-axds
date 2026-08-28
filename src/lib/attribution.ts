@@ -83,6 +83,11 @@ export type WeeklySalesRow = {
   sales: number;
   revenue: number;
   byTier: Record<ProductTier, { sales: number; revenue: number }>;
+  refundValue: number;
+  chargebackValue: number;
+  canceledCount: number;
+  /** Compradores distintos (email, com telefone como fallback) entre as vendas aprovadas. */
+  uniqueBuyers: number;
 };
 
 export type WeeklySalesByAd = Map<string, WeeklySalesRow>;
@@ -97,6 +102,10 @@ function emptyWeeklySalesRow(): WeeklySalesRow {
       downsell: { sales: 0, revenue: 0 },
       outro: { sales: 0, revenue: 0 },
     },
+    refundValue: 0,
+    chargebackValue: 0,
+    canceledCount: 0,
+    uniqueBuyers: 0,
   };
 }
 
@@ -115,6 +124,7 @@ export async function getWeeklySalesByAdAndTier(
   to: Date,
 ): Promise<WeeklySalesByAd> {
   const map: WeeklySalesByAd = new Map();
+  const buyersByAd = new Map<string, Set<string>>();
 
   try {
     const admin = createAdminClient();
@@ -122,9 +132,9 @@ export async function getWeeklySalesByAdAndTier(
     const [purchases, tiers] = await Promise.all([
       admin
         .from("purchases")
-        .select("ad_id, valor, produto")
+        .select("ad_id, valor, produto, status, email, telefone")
         .eq("area_id", areaId)
-        .eq("status", "approved")
+        .in("status", ["approved", "refunded", "chargeback", "canceled"])
         .not("ad_id", "is", null)
         .gte("created_at", from.toISOString())
         .lte("created_at", to.toISOString())
@@ -141,14 +151,36 @@ export async function getWeeklySalesByAdAndTier(
       if (!adId) continue;
 
       const value = Number(row.valor) || 0;
-      const tier = tierByProduct.get((row.produto as string) ?? "") ?? "outro";
-
+      const status = row.status as string;
       const entry = map.get(adId) ?? emptyWeeklySalesRow();
-      entry.sales += 1;
-      entry.revenue += value;
-      entry.byTier[tier].sales += 1;
-      entry.byTier[tier].revenue += value;
+
+      if (status === "approved") {
+        const tier = tierByProduct.get((row.produto as string) ?? "") ?? "outro";
+        entry.sales += 1;
+        entry.revenue += value;
+        entry.byTier[tier].sales += 1;
+        entry.byTier[tier].revenue += value;
+
+        const buyerKey = (row.email as string | null) ?? (row.telefone as string | null);
+        if (buyerKey) {
+          const buyers = buyersByAd.get(adId) ?? new Set<string>();
+          buyers.add(buyerKey);
+          buyersByAd.set(adId, buyers);
+        }
+      } else if (status === "refunded") {
+        entry.refundValue += value;
+      } else if (status === "chargeback") {
+        entry.chargebackValue += value;
+      } else if (status === "canceled") {
+        entry.canceledCount += 1;
+      }
+
       map.set(adId, entry);
+    }
+
+    for (const [adId, buyers] of buyersByAd) {
+      const entry = map.get(adId);
+      if (entry) entry.uniqueBuyers = buyers.size;
     }
   } catch {
     return map;

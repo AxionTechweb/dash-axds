@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getWeeklySalesByAdAndTier } from "@/lib/attribution";
+import { getUsdToBrlRate } from "@/lib/exchange-rate";
 import { withCurrencyTag } from "@/lib/format";
 import { getMetaEntities } from "@/lib/meta/campaigns";
 import { getLastWeekRange } from "@/lib/period";
@@ -20,9 +21,14 @@ import { getVturbByAd } from "@/lib/vturb/metrics";
  * — aqui também descontando a taxa de gateway configurável. Sem imposto da
  * Meta sobre o gasto: a conta é em dólar, não paga mais essa retenção.
  *
- * `campaign_id`/`campaign_name` ficam nulos nesta versão: getMetaEntities
- * agrega os insights por ad_id e não repassa a campanha de origem — dá pra
- * estender depois se fizer falta no relatório.
+ * Câmbio USD→BRL: `getMetaEntities` (compartilhado com /campanhas e as
+ * Regras automáticas) devolve o gasto CRU, sem converter — de propósito,
+ * por decisão explícita do usuário, só o relatório semanal converte por
+ * enquanto. Cada conta carrega sua própria moeda (`accountCurrency`), então
+ * a conversão é sempre por entidade, nunca em cima de um total já misturado.
+ *
+ * `campaign_id` fica nulo nesta versão (só `campaign_name`, que já vem
+ * pronto no insight de anúncio da Meta).
  */
 
 export type BuildWeeklyReportResult = {
@@ -91,19 +97,45 @@ export async function buildWeeklyReport(
     return { rowsWritten: 0, errors };
   }
 
+  // Conta em dólar: converte gasto pra BRL antes de qualquer cálculo (ROAS,
+  // CPA, CAC etc. todos dependem de gasto e receita na MESMA moeda). `venda`
+  // do câmbio é o lado certo pra converter uma DESPESA em dólar.
+  const hasUsdEntities = activeEntities.some(
+    (e) => e.accountCurrency?.toUpperCase() === "USD",
+  );
+  const fxRate = hasUsdEntities ? await getUsdToBrlRate() : null;
+  if (hasUsdEntities && !fxRate) {
+    errors.push(
+      "Câmbio USD→BRL indisponível — gasto de conta(s) em dólar pode estar incorreto neste relatório.",
+    );
+  }
+
   const rows = activeEntities.map((entity) => {
     const adId = entity.id; // no nível "ad", o id da entidade É o ad_id.
     const vturbRow = vturb.byAd.get(adId) ?? null;
     const salesRow = sales.get(adId) ?? null;
 
-    const salesTotal = salesRow?.sales ?? 0;
-    const revenueTotal = salesRow?.revenue ?? 0;
+    const isUsd = entity.accountCurrency?.toUpperCase() === "USD";
+    const fx = isUsd && fxRate ? fxRate.usdToBrl : 1;
+    const spend = entity.spend * fx;
+    const spendUsd = isUsd ? entity.spend : null;
 
-    const platformTax = revenueTotal * (settings.taxRate / 100);
+    const salesTotal = salesRow?.sales ?? 0;
+    const uniqueBuyers = salesRow?.uniqueBuyers ?? 0;
+    // "Receita Bruta": soma das vendas aprovadas, sem descontar nada ainda.
+    const grossRevenue = salesRow?.revenue ?? 0;
+
+    const platformTax = grossRevenue * (settings.taxRate / 100);
     const gatewayFees =
-      revenueTotal * (settings.gatewayFeePct / 100) +
+      grossRevenue * (settings.gatewayFeePct / 100) +
       settings.gatewayFeeFixed * salesTotal;
-    const netMargin = revenueTotal - entity.spend - platformTax - gatewayFees;
+    // "Receita Líquida": bruta menos taxa da plataforma e do gateway (ainda
+    // sem descontar o gasto com anúncio — isso vira "Margem de Lucro").
+    const netRevenue = grossRevenue - platformTax - gatewayFees;
+    const profit = netRevenue - spend;
+    const profitMarginPct = grossRevenue > 0 ? (profit / grossRevenue) * 100 : 0;
+
+    const views = vturbRow?.uniqueViews ?? 0;
 
     return {
       area_id: areaId,
@@ -114,9 +146,10 @@ export async function buildWeeklyReport(
       ad_id: adId,
       ad_name: entity.name,
       campaign_id: null,
-      campaign_name: null,
+      campaign_name: entity.campaignName,
       status: entity.effectiveStatus || entity.status,
-      spend: entity.spend,
+      spend,
+      spend_usd: spendUsd,
       impressions: entity.impressions,
       clicks: entity.clicks,
       page_views: entity.metaLandingPageView,
@@ -129,6 +162,14 @@ export async function buildWeeklyReport(
       plays: vturbRow?.plays ?? null,
       pitch_retention: vturbRow?.pitchRetention ?? null,
       cta_clicks: vturbRow?.ctaClicks ?? null,
+      vturb_views: vturbRow?.views ?? null,
+      vturb_unique_views: vturbRow?.uniqueViews ?? null,
+      vturb_conversions: vturbRow?.conversions ?? null,
+      vturb_revenue: vturbRow?.vturbRevenue ?? null,
+      retention_25: vturbRow?.retention25 ?? null,
+      retention_50: vturbRow?.retention50 ?? null,
+      retention_75: vturbRow?.retention75 ?? null,
+      avg_watch_seconds: vturbRow?.avgWatchSeconds ?? null,
       sales_vd: salesRow?.byTier.vd.sales ?? 0,
       revenue_vd: salesRow?.byTier.vd.revenue ?? 0,
       sales_upsell: salesRow?.byTier.upsell.sales ?? 0,
@@ -136,10 +177,30 @@ export async function buildWeeklyReport(
       sales_downsell: salesRow?.byTier.downsell.sales ?? 0,
       revenue_downsell: salesRow?.byTier.downsell.revenue ?? 0,
       sales_total: salesTotal,
-      revenue_total: revenueTotal,
-      roas: entity.spend > 0 ? revenueTotal / entity.spend : 0,
-      cac: salesTotal > 0 ? entity.spend / salesTotal : 0,
-      net_margin: netMargin,
+      revenue_total: grossRevenue,
+      net_revenue: netRevenue,
+      refund_value: salesRow?.refundValue ?? 0,
+      chargeback_value: salesRow?.chargebackValue ?? 0,
+      canceled_count: salesRow?.canceledCount ?? 0,
+      unique_buyers: uniqueBuyers,
+      roas: spend > 0 ? grossRevenue / spend : 0,
+      // CPA: custo por pedido (inclui recompra). CAC: custo por comprador
+      // único — as duas coexistem de propósito (decisão do usuário).
+      cpa: salesTotal > 0 ? spend / salesTotal : 0,
+      cac: uniqueBuyers > 0 ? spend / uniqueBuyers : 0,
+      arpu: uniqueBuyers > 0 ? grossRevenue / uniqueBuyers : 0,
+      rpv: views > 0 ? grossRevenue / views : 0,
+      conversion_rate: entity.clicks > 0 ? (salesTotal / entity.clicks) * 100 : 0,
+      pv_ic_rate:
+        entity.metaLandingPageView > 0
+          ? (entity.metaInitiateCheckout / entity.metaLandingPageView) * 100
+          : 0,
+      checkout_rate:
+        entity.metaInitiateCheckout > 0
+          ? (salesTotal / entity.metaInitiateCheckout) * 100
+          : 0,
+      net_margin: profit,
+      profit_margin_pct: profitMarginPct,
       delta_meta_vs_own: entity.metaPurchases - salesTotal,
     };
   });
@@ -155,10 +216,16 @@ export async function buildWeeklyReport(
 }
 
 const CREATIVE_REPORT_SHEET_COLUMNS =
-  "account_label, ad_id, ad_name, status, spend, impressions, clicks, page_views, " +
+  "week_start, week_end, account_label, ad_id, ad_name, campaign_name, status, " +
+  "spend, spend_usd, impressions, clicks, page_views, " +
   "initiate_checkout, meta_purchases, hook_rate, plays, play_rate, pitch_retention, " +
-  "cta_clicks, sales_vd, sales_upsell, sales_downsell, sales_total, revenue_total, " +
-  "roas, cac, net_margin, delta_meta_vs_own";
+  "cta_clicks, vturb_views, vturb_unique_views, vturb_conversions, vturb_revenue, " +
+  "retention_25, retention_50, retention_75, avg_watch_seconds, " +
+  "sales_vd, revenue_vd, sales_upsell, revenue_upsell, sales_downsell, revenue_downsell, " +
+  "sales_total, revenue_total, net_revenue, refund_value, chargeback_value, " +
+  "canceled_count, unique_buyers, " +
+  "roas, cpa, cac, arpu, rpv, conversion_rate, pv_ic_rate, checkout_rate, " +
+  "net_margin, profit_margin_pct, delta_meta_vs_own";
 
 export type WeeklyReportRunSummary = {
   areaId: string;
