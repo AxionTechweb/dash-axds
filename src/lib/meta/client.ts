@@ -171,6 +171,78 @@ export async function getAccountStatus(
   }
 }
 
+export type AdReviewStatus = {
+  id: string;
+  name: string;
+  effectiveStatus: string;
+  /** Motivo(s) de reprovação já achatados num texto — null quando não reprovado ou sem detalhe. */
+  reason: string | null;
+};
+
+/**
+ * `ad_review_feedback` (validado contra anúncios reprovados reais): objeto
+ * com uma chave por grupo de revisão (ex.: "global"), cada uma mapeando
+ * categoria → texto do motivo. Achata tudo numa lista, sem assumir que só
+ * existe "global" — nem quantas categorias vêm dentro de cada grupo.
+ */
+function extractRejectionReason(feedback: unknown): string | null {
+  if (!feedback || typeof feedback !== "object") return null;
+
+  const reasons: string[] = [];
+  for (const group of Object.values(feedback as Record<string, unknown>)) {
+    if (!group || typeof group !== "object") continue;
+    for (const text of Object.values(group as Record<string, unknown>)) {
+      if (typeof text === "string" && text.trim()) reasons.push(text.trim());
+    }
+  }
+
+  return reasons.length > 0 ? [...new Set(reasons)].join(" | ") : null;
+}
+
+/**
+ * `effective_status`/`ad_review_feedback` de TODOS os anúncios da conta —
+ * usado pelo alerta de criativo reprovado. Limite de 500 sem paginação
+ * (mesma convenção já usada em `fetchAdInsights`/`fetchEntities`,
+ * meta/campaigns.ts — contas com mais de 500 anúncios ativos podem perder
+ * cobertura, limitação pré-existente no projeto, não introduzida aqui).
+ */
+export async function getAdReviewStatuses(
+  token: string,
+  adAccountId: string,
+): Promise<{ data: AdReviewStatus[]; error: string | null }> {
+  try {
+    const url =
+      `${META_GRAPH_BASE}/${normalizeAccountId(adAccountId)}/ads` +
+      `?fields=id,name,effective_status,ad_review_feedback&limit=500&access_token=${encodeURIComponent(token)}`;
+    const response = await fetch(url, { cache: "no-store" });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      return { data: [], error: body?.error?.message ?? `HTTP ${response.status}` };
+    }
+
+    const payload = (await response.json()) as { data?: unknown[] };
+    const data = (payload.data ?? []).map((raw) => {
+      const row = raw as Record<string, unknown>;
+      return {
+        id: String(row.id ?? ""),
+        name: typeof row.name === "string" ? row.name : String(row.id ?? ""),
+        effectiveStatus: typeof row.effective_status === "string" ? row.effective_status : "",
+        reason: extractRejectionReason(row.ad_review_feedback),
+      };
+    });
+
+    return { data, error: null };
+  } catch (err) {
+    return {
+      data: [],
+      error: err instanceof Error ? err.message : "falha na requisição",
+    };
+  }
+}
+
 export async function getAreaInsights(
   areaId: string,
   from: Date,

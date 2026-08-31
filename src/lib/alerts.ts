@@ -1,16 +1,18 @@
 import "server-only";
 
 import { accountStatusLabel } from "@/lib/meta/accounts";
-import { getAccountStatus, getAdAccounts } from "@/lib/meta/client";
+import { getAccountStatus, getAdAccounts, getAdReviewStatuses } from "@/lib/meta/client";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyArea } from "@/lib/whatsapp/client";
 
 /**
  * Motor dos avisos de WhatsApp — chamado pelo cron externo (mesmo esquema do
- * checkpoint diário, precisa rodar a cada ~15min). Dois gatilhos:
+ * checkpoint diário, precisa rodar a cada ~15min). Gatilhos:
  *  1. Nenhuma venda aprovada nos últimos 60 minutos.
  *  2. Conta de anúncio desativada na Meta (account_status != 1).
- * (O terceiro gatilho — Regra de automação pausando algo — vive dentro do
+ *  3. Criativo reprovado na Meta (effective_status = DISAPPROVED), com o
+ *     motivo da reprovação.
+ * (O quarto gatilho — Regra de automação pausando algo — vive dentro do
  * próprio motor de Regras, src/lib/rules/engine.ts, porque é lá que a pausa
  * acontece de fato.)
  *
@@ -104,6 +106,65 @@ async function checkAccountStatusAlerts(areaId: string): Promise<void> {
   }
 }
 
+/**
+ * Reusa a tabela genérica `alert_state` (mesmo esquema do comentário original
+ * dela: "account_status:act_123") com `alert_type = "ad_rejected:<ad_id>"` —
+ * dedup por status ARMAZENADO em `last_state.status`, sem precisar de tabela
+ * nova só pra isso. Só grava linha pra anúncio que JÁ foi ou está reprovado
+ * (a maioria nunca é, e não vale a pena gravar uma linha por anúncio da
+ * conta inteira).
+ */
+async function checkAdRejectionAlerts(areaId: string): Promise<void> {
+  const admin = createAdminClient();
+  const accounts = await getAdAccounts(areaId);
+  if (accounts.length === 0) return;
+
+  const { data: stateRows } = await admin
+    .from("alert_state")
+    .select("alert_type, last_state")
+    .eq("area_id", areaId)
+    .like("alert_type", "ad_rejected:%");
+
+  const previousStatusByAdId = new Map<string, string | null>();
+  for (const row of stateRows ?? []) {
+    const adId = (row.alert_type as string).slice("ad_rejected:".length);
+    const status = (row.last_state as { status?: string } | null)?.status ?? null;
+    previousStatusByAdId.set(adId, status);
+  }
+
+  for (const account of accounts) {
+    if (!account.ads_token) continue;
+
+    const result = await getAdReviewStatuses(account.ads_token, account.ad_account_id);
+    // Erro de rede/token não é uma transição de status — não alerta por isso.
+    if (result.error) continue;
+
+    for (const ad of result.data) {
+      const isRejectedNow = ad.effectiveStatus === "DISAPPROVED";
+      const wasRejected = previousStatusByAdId.get(ad.id) === "DISAPPROVED";
+      if (isRejectedNow === wasRejected) continue; // sem mudança de estado
+
+      if (isRejectedNow) {
+        const reason = ad.reason ?? "motivo não especificado pela Meta.";
+        await notifyArea(
+          areaId,
+          `🚫 Criativo reprovado na Meta — "${ad.name}" (${account.label}).\nMotivo: ${reason}`,
+        );
+      }
+
+      await admin.from("alert_state").upsert(
+        {
+          area_id: areaId,
+          alert_type: `ad_rejected:${ad.id}`,
+          ...(isRejectedNow ? { last_alerted_at: new Date().toISOString() } : {}),
+          last_state: { status: ad.effectiveStatus, reason: ad.reason ?? null },
+        },
+        { onConflict: "area_id,alert_type" },
+      );
+    }
+  }
+}
+
 export type AlertsAreaResult = { areaId: string; errors: string[] };
 
 export async function runAlertsForAllAreas(): Promise<AlertsAreaResult[]> {
@@ -126,6 +187,12 @@ export async function runAlertsForAllAreas(): Promise<AlertsAreaResult[]> {
       await checkAccountStatusAlerts(areaId);
     } catch (err) {
       errors.push(`account_status: ${err instanceof Error ? err.message : "erro desconhecido"}`);
+    }
+
+    try {
+      await checkAdRejectionAlerts(areaId);
+    } catch (err) {
+      errors.push(`ad_rejection: ${err instanceof Error ? err.message : "erro desconhecido"}`);
     }
 
     results.push({ areaId, errors });
