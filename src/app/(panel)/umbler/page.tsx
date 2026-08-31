@@ -2,6 +2,7 @@ import {
   Clock,
   MessageCircle,
   MessageSquareText,
+  RotateCcw,
   ShoppingBag,
   TriangleAlert,
   Users,
@@ -12,6 +13,7 @@ import type { Metadata } from "next";
 import { KpiCard } from "@/components/panel/kpi-card";
 import { Card, CardHeader, CardLabel } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
+import { getCartRecoveryMetrics } from "@/lib/attribution";
 import { formatCurrency, formatDuration, formatNumber, formatPercent } from "@/lib/format";
 import { resolvePeriod } from "@/lib/period";
 import { createClient } from "@/lib/supabase/server";
@@ -64,10 +66,12 @@ export default async function UmblerPage({
     { summary: chatSummary, errors: chatErrors },
     { summary: ratings, errors: ratingErrors },
     { summary: conversion, errors: conversionErrors },
+    cartRecovery,
   ] = await Promise.all([
     getChatVolumeSummary(activeArea.id, period.from, period.to),
     getRatingsSummary(activeArea.id, period.from, period.to),
     getChatToSaleConversion(activeArea.id, period.from, period.to),
+    getCartRecoveryMetrics(activeArea.id, period.from, period.to),
   ]);
 
   const errors = [...chatErrors, ...ratingErrors, ...conversionErrors];
@@ -181,6 +185,13 @@ export default async function UmblerPage({
           value={conversion ? formatCurrency(conversion.matchedRevenue) : "—"}
           icon={ShoppingBag}
           accent="emerald"
+        />
+        <KpiCard
+          label="Recuperação Carrinho Umbler"
+          value={formatCurrency(cartRecovery.revenue)}
+          icon={RotateCcw}
+          accent="emerald"
+          sub={`${formatNumber(cartRecovery.count)} venda${cartRecovery.count === 1 ? "" : "s"} recuperada${cartRecovery.count === 1 ? "" : "s"}`}
         />
         <KpiCard
           label="Custo estimado — templates"

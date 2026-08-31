@@ -223,3 +223,80 @@ export async function getFunnelBase(
     return { views: 0, checkouts: 0 };
   }
 }
+
+export type CartRecoveryMetrics = {
+  /** Vendas aprovadas cujo comprador tinha um abandono de checkout ANTES dela. */
+  count: number;
+  revenue: number;
+};
+
+/**
+ * Recuperação de carrinho: compradores (email, com telefone como fallback)
+ * que abandonaram o checkout (`status = 'abandoned'`) e depois voltaram e
+ * finalizaram a compra (`status = 'approved'`, criada DEPOIS do abandono).
+ * Usada em /dashboard e /umbler — WhatsApp (Umbler Talk) é hoje o único
+ * canal de recuperação deste negócio, daí o nome da métrica, mas o cálculo
+ * em si não depende da API da Umbler (é só cruzamento de status próprio).
+ *
+ * O abandono pode ter acontecido antes do período selecionado (o cliente
+ * some por dias e volta) — por isso busca abandonos em TODO o histórico,
+ * mas só conta como recuperação a venda aprovada que caiu dentro do período.
+ */
+export async function getCartRecoveryMetrics(
+  areaId: string,
+  from: Date,
+  to: Date,
+): Promise<CartRecoveryMetrics> {
+  try {
+    const supabase = await createClient();
+
+    const [abandoned, approved] = await Promise.all([
+      supabase
+        .from("purchases")
+        .select("email, telefone, created_at")
+        .eq("area_id", areaId)
+        .eq("status", "abandoned")
+        .lte("created_at", to.toISOString())
+        .limit(20_000),
+      supabase
+        .from("purchases")
+        .select("email, telefone, valor, created_at")
+        .eq("area_id", areaId)
+        .eq("status", "approved")
+        .gte("created_at", from.toISOString())
+        .lte("created_at", to.toISOString())
+        .limit(20_000),
+    ]);
+
+    const buyerKey = (row: { email?: string | null; telefone?: string | null }) =>
+      row.email ?? row.telefone ?? null;
+
+    // Guarda o abandono MAIS ANTIGO por comprador — só precisa de um ponto
+    // de referência pra checar "a aprovação veio depois de algum abandono".
+    const earliestAbandonByBuyer = new Map<string, number>();
+    for (const row of abandoned.data ?? []) {
+      const key = buyerKey(row);
+      if (!key) continue;
+      const at = new Date(row.created_at as string).getTime();
+      const current = earliestAbandonByBuyer.get(key);
+      if (current === undefined || at < current) earliestAbandonByBuyer.set(key, at);
+    }
+
+    let count = 0;
+    let revenue = 0;
+    for (const row of approved.data ?? []) {
+      const key = buyerKey(row);
+      if (!key) continue;
+      const abandonedAt = earliestAbandonByBuyer.get(key);
+      if (abandonedAt === undefined) continue;
+      if (new Date(row.created_at as string).getTime() <= abandonedAt) continue;
+
+      count += 1;
+      revenue += Number(row.valor) || 0;
+    }
+
+    return { count, revenue };
+  } catch {
+    return { count: 0, revenue: 0 };
+  }
+}

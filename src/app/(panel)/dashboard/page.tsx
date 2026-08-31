@@ -19,6 +19,7 @@ import {
   Package,
   Radio,
   Receipt,
+  RotateCcw,
   Share2,
   ShoppingBag,
   ShoppingCart,
@@ -41,6 +42,7 @@ import { RevenueChart } from "@/components/panel/revenue-chart";
 import { HourSalesChart, WeekdaySalesChart } from "@/components/panel/sales-timing-charts";
 import { Card } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
+import { getCartRecoveryMetrics } from "@/lib/attribution";
 import { formatCurrency, formatNumber, formatPercent, formatRoas } from "@/lib/format";
 import { getAreaInsights } from "@/lib/meta/client";
 import {
@@ -81,10 +83,11 @@ export default async function DashboardPage({
   }
 
   // Dados próprios (Last Click) + mídia e funil (pixel) da Meta, em paralelo.
-  const [metrics, meta, timing] = await Promise.all([
+  const [metrics, meta, timing, cartRecovery] = await Promise.all([
     getPurchaseMetrics(activeArea.id, period.from, period.to),
     getAreaInsights(activeArea.id, period.from, period.to),
     getSalesTiming(activeArea.id, period.from, period.to),
+    getCartRecoveryMetrics(activeArea.id, period.from, period.to),
   ]);
 
   const safeMetrics = metrics ?? EMPTY_METRICS;
@@ -283,6 +286,14 @@ export default async function DashboardPage({
             accent="destructive"
             sensitive={false}
             sub={`${formatNumber(safeMetrics.abandonedCount)} carrinho${safeMetrics.abandonedCount === 1 ? "" : "s"}`}
+          />
+          <KpiCard
+            label="Recuperação Carrinho Umbler"
+            value={formatCurrency(cartRecovery.revenue, currency)}
+            icon={RotateCcw}
+            accent="emerald"
+            sensitive={false}
+            sub={`${formatNumber(cartRecovery.count)} venda${cartRecovery.count === 1 ? "" : "s"} recuperada${cartRecovery.count === 1 ? "" : "s"}`}
           />
         </div>
       </div>
