@@ -92,6 +92,26 @@ export async function getPlayerStats(
 
 export type VturbRetentionPoint = { seconds: number; retentionPercent: number };
 
+/**
+ * Contagens BRUTAS em pontos fixos do funil (pedido explícito do usuário
+ * pra esta página): reprodução aos 3s ("gancho"), e 25/50/75% da DURAÇÃO do
+ * vídeo. São números absolutos, não percentuais — os KPIs da página dividem
+ * pelo denominador que fizer sentido pra cada um (impressões pro gancho,
+ * a própria contagem do gancho pras retenções seguintes), diferente do
+ * `retentionPercent` de `points` (que é sempre relativo ao TOTAL de sessões).
+ *
+ * NOTA: o limiar de gancho aqui é 3s, fixo por pedido do usuário — não usa
+ * `VTURB_HOOK_THRESHOLD_SECONDS` (5s), que é do relatório semanal por
+ * criativo (métrica diferente, mesmo nome).
+ */
+export type VturbFunnelCounts = {
+  countAt3s: number;
+  countAt25: number;
+  countAt50: number;
+  countAt75: number;
+  avgWatchSeconds: number | null;
+};
+
 type EngagementResponse = { grouped_timed?: { timed: number; total_users: number }[] };
 
 /**
@@ -105,9 +125,9 @@ export async function getPlayerRetentionCurve(
   playerId: string,
   from: Date,
   to: Date,
-): Promise<{ points: VturbRetentionPoint[]; error: string | null }> {
+): Promise<{ points: VturbRetentionPoint[]; funnel: VturbFunnelCounts | null; error: string | null }> {
   const account = await getVturbAccount(areaId);
-  if (!account) return { points: [], error: "Vturb não conectado nesta área." };
+  if (!account) return { points: [], funnel: null, error: "Vturb não conectado nesta área." };
 
   const discovered = await discoverVturbPlayers(areaId, account.apiKey);
   const meta = discovered.ok ? discovered.players.find((p) => p.id === playerId) : undefined;
@@ -124,15 +144,15 @@ export async function getPlayerRetentionCurve(
     },
   );
 
-  if (result.error) return { points: [], error: result.error };
+  if (result.error) return { points: [], funnel: null, error: result.error };
 
   const raw = result.data;
   const buckets = Array.isArray(raw) ? (raw[0]?.grouped_timed ?? []) : (raw?.grouped_timed ?? []);
-  if (buckets.length === 0) return { points: [], error: null };
+  if (buckets.length === 0) return { points: [], funnel: null, error: null };
 
   const sorted = [...buckets].sort((a, b) => a.timed - b.timed);
   const total = sorted.reduce((sum, b) => sum + (Number(b.total_users) || 0), 0);
-  if (total === 0) return { points: [], error: null };
+  if (total === 0) return { points: [], funnel: null, error: null };
 
   let runningFromEnd = 0;
   const reversed = [...sorted].reverse().map((bucket) => {
@@ -146,7 +166,22 @@ export async function getPlayerRetentionCurve(
     retentionPercent: (retainedUsers / total) * 100,
   }));
 
-  return { points, error: null };
+  const duration = meta?.duration ?? null;
+  const countAtOrAbove = (threshold: number) =>
+    sorted.reduce((sum, b) => sum + (b.timed >= threshold ? Number(b.total_users) || 0 : 0), 0);
+  const weightedSum = sorted.reduce((sum, b) => sum + b.timed * (Number(b.total_users) || 0), 0);
+
+  const funnel: VturbFunnelCounts | null = duration
+    ? {
+        countAt3s: countAtOrAbove(3),
+        countAt25: countAtOrAbove(duration * 0.25),
+        countAt50: countAtOrAbove(duration * 0.5),
+        countAt75: countAtOrAbove(duration * 0.75),
+        avgWatchSeconds: weightedSum / total,
+      }
+    : null;
+
+  return { points, funnel, error: null };
 }
 
 /* -------------------------------------------------------- traffic origin */

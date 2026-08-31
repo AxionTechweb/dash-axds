@@ -1,6 +1,7 @@
 import {
   Activity,
   BadgeDollarSign,
+  Clock,
   Eye,
   ListChecks,
   MousePointerClick,
@@ -11,6 +12,7 @@ import {
   TrendingUp,
   TriangleAlert,
   Users,
+  Zap,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -19,7 +21,7 @@ import { KpiCard } from "@/components/panel/kpi-card";
 import { VturbRetentionChart } from "@/components/panel/vturb-retention-chart";
 import { Card, CardHeader, CardLabel } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
-import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
+import { formatCurrency, formatDuration, formatNumber, formatPercent } from "@/lib/format";
 import { resolvePeriod } from "@/lib/period";
 import { cn } from "@/lib/utils";
 import { getVturbPlayers } from "@/lib/vturb/client";
@@ -67,13 +69,25 @@ export default async function VturbPage({
 
   const [
     { stats, error: statsError },
-    { points, error: curveError },
+    { points, funnel, error: curveError },
     { rows: originRows, error: originError },
   ] = await Promise.all([
     getPlayerStats(activeArea.id, selected.playerId, period.from, period.to),
     getPlayerRetentionCurve(activeArea.id, selected.playerId, period.from, period.to),
     getPlayerTrafficOrigin(activeArea.id, selected.playerId, period.from, period.to),
   ]);
+
+  // Funil pedido pelo usuário: Hook Rate relativo às VIEWS (não ao total de
+  // sessões), e cada retenção seguinte relativa à contagem do gancho (3s) —
+  // não ao total, diferente do `retentionPercent` da curva geral.
+  const hookRate =
+    funnel && stats && stats.views > 0 ? (funnel.countAt3s / stats.views) * 100 : null;
+  const retention25 =
+    funnel && funnel.countAt3s > 0 ? (funnel.countAt25 / funnel.countAt3s) * 100 : null;
+  const retention50 =
+    funnel && funnel.countAt3s > 0 ? (funnel.countAt50 / funnel.countAt3s) * 100 : null;
+  const retention75 =
+    funnel && funnel.countAt3s > 0 ? (funnel.countAt75 / funnel.countAt3s) * 100 : null;
 
   const tabParams = new URLSearchParams();
   if (params.period) tabParams.set("period", params.period);
@@ -135,6 +149,44 @@ export default async function VturbPage({
             value={formatNumber(stats.uniquePlays)}
             icon={ListChecks}
             accent="primary"
+            sensitive={false}
+          />
+          <KpiCard
+            label="Hook Rate"
+            value={hookRate !== null ? formatPercent(hookRate, 2) : "—"}
+            icon={Zap}
+            accent="purple"
+            sensitive={false}
+            sub="Reprodução 3s / Views"
+          />
+          <KpiCard
+            label="Retenção 25%"
+            value={retention25 !== null ? formatPercent(retention25, 2) : "—"}
+            icon={Percent}
+            accent="purple"
+            sensitive={false}
+            sub="Reprodução 25% / Reprodução 3s"
+          />
+          <KpiCard
+            label="Retenção 50%"
+            value={retention50 !== null ? formatPercent(retention50, 2) : "—"}
+            icon={Percent}
+            accent="purple"
+            sensitive={false}
+            sub="Reprodução 50% / Reprodução 3s"
+          />
+          <KpiCard
+            label="Retenção 75%"
+            value={retention75 !== null ? formatPercent(retention75, 2) : "—"}
+            icon={Percent}
+            accent="purple"
+            sensitive={false}
+            sub="Reprodução 75% / Reprodução 3s"
+          />
+          <KpiCard
+            label="Tempo médio de visualização"
+            value={formatDuration(funnel?.avgWatchSeconds ?? null)}
+            icon={Clock}
             sensitive={false}
           />
           <KpiCard
