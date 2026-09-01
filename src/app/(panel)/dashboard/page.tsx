@@ -42,7 +42,7 @@ import { RevenueChart } from "@/components/panel/revenue-chart";
 import { HourSalesChart, WeekdaySalesChart } from "@/components/panel/sales-timing-charts";
 import { Card } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
-import { getCartRecoveryMetrics } from "@/lib/attribution";
+import { getRoasSegments } from "@/lib/attribution";
 import { formatCurrency, formatNumber, formatPercent, formatRoas } from "@/lib/format";
 import { getAreaInsights } from "@/lib/meta/client";
 import {
@@ -83,12 +83,14 @@ export default async function DashboardPage({
   }
 
   // Dados próprios (Last Click) + mídia e funil (pixel) da Meta, em paralelo.
-  const [metrics, meta, timing, cartRecovery] = await Promise.all([
+  const [metrics, meta, timing, roasSegments] = await Promise.all([
     getPurchaseMetrics(activeArea.id, period.from, period.to),
     getAreaInsights(activeArea.id, period.from, period.to),
     getSalesTiming(activeArea.id, period.from, period.to),
-    getCartRecoveryMetrics(activeArea.id, period.from, period.to),
+    getRoasSegments(activeArea.id, period.from, period.to),
   ]);
+
+  const cartRecovery = { count: roasSegments.recoveryCount, revenue: roasSegments.recoveryRevenue };
 
   const safeMetrics = metrics ?? EMPTY_METRICS;
 
@@ -106,6 +108,15 @@ export default async function DashboardPage({
   const roas = adSpend > 0 ? revenue / adSpend : 0;
   const cpa = sales > 0 ? adSpend / sales : 0;
   const ticketMedio = sales > 0 ? revenue / sales : 0;
+
+  // ROAS Front (venda principal, R$197) vs ROAS Backend (Upsell + Downsell +
+  // Recuperação de carrinho via Umbler) — mutuamente exclusivos: uma venda
+  // recuperada nunca conta como Front, mesmo que seja de R$197 (decisão do
+  // usuário, evita contar a mesma receita nos dois ROAS).
+  const roasBackendRevenue =
+    roasSegments.upsellRevenue + roasSegments.downsellRevenue + roasSegments.recoveryRevenue;
+  const roasFront = adSpend > 0 ? roasSegments.frontRevenue / adSpend : 0;
+  const roasBackend = adSpend > 0 ? roasBackendRevenue / adSpend : 0;
 
   const impressions = meta.insights.impressions;
   const clicks = meta.insights.clicks;
@@ -203,6 +214,22 @@ export default async function DashboardPage({
           icon={Target}
           accent={roas > 0 && roas < 1 ? "destructive" : "primary"}
           series={roasSeries}
+        />
+        <KpiCard
+          label="ROAS Front"
+          value={formatRoas(roasFront)}
+          icon={Target}
+          accent={roasFront > 0 && roasFront < 1 ? "destructive" : "primary"}
+          sensitive={false}
+          sub={`${formatCurrency(roasSegments.frontRevenue, currency)} (${formatNumber(roasSegments.frontCount)})`}
+        />
+        <KpiCard
+          label="ROAS Backend"
+          value={formatRoas(roasBackend)}
+          icon={Target}
+          accent={roasBackend > 0 && roasBackend < 1 ? "destructive" : "primary"}
+          sensitive={false}
+          sub={`${formatCurrency(roasBackendRevenue, currency)} (Upsell+Downsell+Recuperação)`}
         />
         <KpiCard
           label="CPA"

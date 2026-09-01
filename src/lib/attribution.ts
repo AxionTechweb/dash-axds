@@ -1,5 +1,6 @@
 import "server-only";
 
+import { classifySaleByValue } from "@/lib/sale-value-tier";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -224,79 +225,155 @@ export async function getFunnelBase(
   }
 }
 
+type ApprovedSaleWithRecovery = { valor: number; recovered: boolean };
+
+/**
+ * Vendas aprovadas do período, cada uma marcada como `recovered` quando o
+ * comprador (email, com telefone como fallback) tinha um abandono de
+ * checkout (`status = 'abandoned'`) ANTES dela — WhatsApp (Umbler Talk) é
+ * hoje o único canal de recuperação deste negócio, mas o cálculo em si não
+ * depende da API da Umbler (é só cruzamento de status próprio).
+ *
+ * O abandono pode ter acontecido antes do período selecionado (o cliente
+ * some por dias e volta) — por isso busca abandonos em TODO o histórico,
+ * mas só considera a venda aprovada que caiu dentro do período.
+ */
+async function getApprovedSalesWithRecoveryFlag(
+  areaId: string,
+  from: Date,
+  to: Date,
+): Promise<ApprovedSaleWithRecovery[]> {
+  const supabase = await createClient();
+
+  const [abandoned, approved] = await Promise.all([
+    supabase
+      .from("purchases")
+      .select("email, telefone, created_at")
+      .eq("area_id", areaId)
+      .eq("status", "abandoned")
+      .lte("created_at", to.toISOString())
+      .limit(20_000),
+    supabase
+      .from("purchases")
+      .select("email, telefone, valor, created_at")
+      .eq("area_id", areaId)
+      .eq("status", "approved")
+      .gte("created_at", from.toISOString())
+      .lte("created_at", to.toISOString())
+      .limit(20_000),
+  ]);
+
+  const buyerKey = (row: { email?: string | null; telefone?: string | null }) =>
+    row.email ?? row.telefone ?? null;
+
+  // Guarda o abandono MAIS ANTIGO por comprador — só precisa de um ponto
+  // de referência pra checar "a aprovação veio depois de algum abandono".
+  const earliestAbandonByBuyer = new Map<string, number>();
+  for (const row of abandoned.data ?? []) {
+    const key = buyerKey(row);
+    if (!key) continue;
+    const at = new Date(row.created_at as string).getTime();
+    const current = earliestAbandonByBuyer.get(key);
+    if (current === undefined || at < current) earliestAbandonByBuyer.set(key, at);
+  }
+
+  return (approved.data ?? []).map((row) => {
+    const key = buyerKey(row);
+    const abandonedAt = key ? earliestAbandonByBuyer.get(key) : undefined;
+    const recovered =
+      abandonedAt !== undefined &&
+      new Date(row.created_at as string).getTime() > abandonedAt;
+    return { valor: Number(row.valor) || 0, recovered };
+  });
+}
+
 export type CartRecoveryMetrics = {
   /** Vendas aprovadas cujo comprador tinha um abandono de checkout ANTES dela. */
   count: number;
   revenue: number;
 };
 
-/**
- * Recuperação de carrinho: compradores (email, com telefone como fallback)
- * que abandonaram o checkout (`status = 'abandoned'`) e depois voltaram e
- * finalizaram a compra (`status = 'approved'`, criada DEPOIS do abandono).
- * Usada em /dashboard e /umbler — WhatsApp (Umbler Talk) é hoje o único
- * canal de recuperação deste negócio, daí o nome da métrica, mas o cálculo
- * em si não depende da API da Umbler (é só cruzamento de status próprio).
- *
- * O abandono pode ter acontecido antes do período selecionado (o cliente
- * some por dias e volta) — por isso busca abandonos em TODO o histórico,
- * mas só conta como recuperação a venda aprovada que caiu dentro do período.
- */
+/** Usada em /dashboard e /umbler. */
 export async function getCartRecoveryMetrics(
   areaId: string,
   from: Date,
   to: Date,
 ): Promise<CartRecoveryMetrics> {
   try {
-    const supabase = await createClient();
-
-    const [abandoned, approved] = await Promise.all([
-      supabase
-        .from("purchases")
-        .select("email, telefone, created_at")
-        .eq("area_id", areaId)
-        .eq("status", "abandoned")
-        .lte("created_at", to.toISOString())
-        .limit(20_000),
-      supabase
-        .from("purchases")
-        .select("email, telefone, valor, created_at")
-        .eq("area_id", areaId)
-        .eq("status", "approved")
-        .gte("created_at", from.toISOString())
-        .lte("created_at", to.toISOString())
-        .limit(20_000),
-    ]);
-
-    const buyerKey = (row: { email?: string | null; telefone?: string | null }) =>
-      row.email ?? row.telefone ?? null;
-
-    // Guarda o abandono MAIS ANTIGO por comprador — só precisa de um ponto
-    // de referência pra checar "a aprovação veio depois de algum abandono".
-    const earliestAbandonByBuyer = new Map<string, number>();
-    for (const row of abandoned.data ?? []) {
-      const key = buyerKey(row);
-      if (!key) continue;
-      const at = new Date(row.created_at as string).getTime();
-      const current = earliestAbandonByBuyer.get(key);
-      if (current === undefined || at < current) earliestAbandonByBuyer.set(key, at);
-    }
-
-    let count = 0;
-    let revenue = 0;
-    for (const row of approved.data ?? []) {
-      const key = buyerKey(row);
-      if (!key) continue;
-      const abandonedAt = earliestAbandonByBuyer.get(key);
-      if (abandonedAt === undefined) continue;
-      if (new Date(row.created_at as string).getTime() <= abandonedAt) continue;
-
-      count += 1;
-      revenue += Number(row.valor) || 0;
-    }
-
-    return { count, revenue };
+    const sales = await getApprovedSalesWithRecoveryFlag(areaId, from, to);
+    const recovered = sales.filter((s) => s.recovered);
+    return {
+      count: recovered.length,
+      revenue: recovered.reduce((sum, s) => sum + s.valor, 0),
+    };
   } catch {
     return { count: 0, revenue: 0 };
+  }
+}
+
+export type RoasSegments = {
+  frontRevenue: number;
+  frontCount: number;
+  upsellRevenue: number;
+  upsellCount: number;
+  downsellRevenue: number;
+  downsellCount: number;
+  recoveryRevenue: number;
+  recoveryCount: number;
+};
+
+const EMPTY_ROAS_SEGMENTS: RoasSegments = {
+  frontRevenue: 0,
+  frontCount: 0,
+  upsellRevenue: 0,
+  upsellCount: 0,
+  downsellRevenue: 0,
+  downsellCount: 0,
+  recoveryRevenue: 0,
+  recoveryCount: 0,
+};
+
+/**
+ * Segmenta as vendas aprovadas do período pra "ROAS Front" vs "ROAS Backend"
+ * (pedido do usuário): Front = venda principal (R$197), Backend = Upsell
+ * (R$297) + Downsell (R$97) + Recuperação de carrinho via Umbler.
+ *
+ * Recuperação tem PRIORIDADE sobre o valor — por decisão explícita do
+ * usuário, uma venda de R$197 recuperada de um abandono NÃO conta como
+ * Front, só como Recuperação (dentro do Backend). Sem isso, a mesma receita
+ * apareceria nos dois ROAS ao mesmo tempo.
+ */
+export async function getRoasSegments(
+  areaId: string,
+  from: Date,
+  to: Date,
+): Promise<RoasSegments> {
+  try {
+    const sales = await getApprovedSalesWithRecoveryFlag(areaId, from, to);
+    const segments = { ...EMPTY_ROAS_SEGMENTS };
+
+    for (const sale of sales) {
+      if (sale.recovered) {
+        segments.recoveryRevenue += sale.valor;
+        segments.recoveryCount += 1;
+        continue;
+      }
+
+      const tier = classifySaleByValue(sale.valor);
+      if (tier === "front") {
+        segments.frontRevenue += sale.valor;
+        segments.frontCount += 1;
+      } else if (tier === "upsell") {
+        segments.upsellRevenue += sale.valor;
+        segments.upsellCount += 1;
+      } else if (tier === "downsell") {
+        segments.downsellRevenue += sale.valor;
+        segments.downsellCount += 1;
+      }
+    }
+
+    return segments;
+  } catch {
+    return EMPTY_ROAS_SEGMENTS;
   }
 }

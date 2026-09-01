@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { buildTimeline, EventsTimeline, ProductsList, STATUS_LABEL, STATUS_STYLE } from "./journey-shared";
 
 const TIER_STYLE: Record<string, string> = {
+  front: "bg-[hsl(var(--primary)/0.15)] text-primary",
   upsell: "bg-[hsl(var(--accent-emerald)/0.15)] text-emerald",
   downsell: "bg-[hsl(var(--accent-purple)/0.15)] text-purple",
   outro: "bg-muted text-muted-foreground",
