@@ -1575,6 +1575,17 @@ alter table public.creative_reports
 alter table public.creative_reports
   add column if not exists ticket_medio numeric(14,2);
 
+-- =============================================================================
+-- 20260901120000_umbler_template_clicks.sql
+-- =============================================================================
+-- Cliques em botão de template do WhatsApp — o campo já vem de graça na
+-- mesma mensagem que o sync diário de templates (`buttons[].selected`),
+-- validado contra mensagens reais antes de implementar.
+-- =============================================================================
+
+alter table public.umbler_template_sends
+  add column if not exists clicks integer not null default 0;
+
 -- ---------------------------------------------------------------------
 -- Histórico de migrations: faz um futuro `supabase db push` saber que
 -- estas já foram aplicadas, evitando reaplicar tudo por cima.
@@ -1609,7 +1620,8 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260825120000', 'purchase_waiting_abandoned_status'),
   ('20260828120000', 'creative_reports_extra_columns'),
   ('20260828120100', 'fix_retention_columns_precision'),
-  ('20260828120200', 'add_ticket_medio_column')
+  ('20260828120200', 'add_ticket_medio_column'),
+  ('20260901120000', 'umbler_template_clicks')
 on conflict (version) do nothing;
 
 commit;

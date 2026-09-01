@@ -2,6 +2,7 @@ import {
   Clock,
   MessageCircle,
   MessageSquareText,
+  MousePointerClick,
   RotateCcw,
   ShoppingBag,
   TriangleAlert,
@@ -94,7 +95,7 @@ export default async function UmblerPage({
   const supabase = await createClient();
   const { data: templateRows } = await supabase
     .from("umbler_template_sends")
-    .select("day, template_id, template_label, sends")
+    .select("day, template_id, template_label, sends, clicks")
     .eq("area_id", activeArea.id)
     .gte("day", period.from.toISOString().slice(0, 10))
     .lte("day", period.to.toISOString().slice(0, 10))
@@ -107,6 +108,7 @@ export default async function UmblerPage({
       ? (conversion.matchedSales / chatSummary.uniqueContacts) * 100
       : null;
   const totalTemplateSends = templates.reduce((sum, row) => sum + row.sends, 0);
+  const totalTemplateClicks = templates.reduce((sum, row) => sum + (row.clicks ?? 0), 0);
   const templateCost = totalTemplateSends * TEMPLATE_COST_BRL;
 
   return (
@@ -200,6 +202,18 @@ export default async function UmblerPage({
           accent="destructive"
           sub={`${formatNumber(totalTemplateSends)} envio(s) × ${formatCurrency(TEMPLATE_COST_BRL)}`}
         />
+        <KpiCard
+          label="Cliques em template"
+          value={formatNumber(totalTemplateClicks)}
+          icon={MousePointerClick}
+          accent="emerald"
+          sensitive={false}
+          sub={
+            totalTemplateSends > 0
+              ? `${formatPercent((totalTemplateClicks / totalTemplateSends) * 100, 1)} dos envios`
+              : undefined
+          }
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -265,6 +279,8 @@ export default async function UmblerPage({
                   <Th>Dia</Th>
                   <Th>Template</Th>
                   <Th align="right">Envios</Th>
+                  <Th align="right">Cliques</Th>
+                  <Th align="right">Taxa de clique</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -276,6 +292,14 @@ export default async function UmblerPage({
                     <td className="px-4 py-2.5">{row.template_label ?? row.template_id}</td>
                     <td className="px-4 py-2.5 text-right font-mono tabular">
                       {formatNumber(row.sends)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.clicks ?? 0)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.sends > 0
+                        ? formatPercent(((row.clicks ?? 0) / row.sends) * 100, 1)
+                        : "—"}
                     </td>
                   </tr>
                 ))}

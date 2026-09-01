@@ -21,6 +21,11 @@ import { getUmblerIntegration, umblerGet } from "@/lib/umbler/client";
  * Corrigido com concorrência limitada + orçamento de tempo: o sync sempre
  * retorna dentro do prazo, marcando `partial: true` se não deu tempo de
  * varrer tudo (fica pro próximo dia, não é dado financeiro).
+ *
+ * Cliques em botão: cada mensagem de template já vem com `buttons[]`, e cada
+ * botão tem `selected: boolean` (validado contra mensagens reais com clique
+ * de verdade) — não precisa de chamada extra na API, só ler o campo que já
+ * está na mesma resposta usada pra contar os envios.
  */
 
 const MAX_CHAT_PAGES = 20;
@@ -108,6 +113,7 @@ async function syncArea(areaId: string, deadline: number): Promise<UmblerSyncSum
   // envios de template no dia. Para de pegar chats NOVOS depois do prazo,
   // mas não aborta o que já está em andamento.
   const sendsByTemplate = new Map<string, number>();
+  const clicksByTemplate = new Map<string, number>();
   let chatsScanned = 0;
 
   const pending = [...chatIds];
@@ -121,7 +127,11 @@ async function syncArea(areaId: string, deadline: number): Promise<UmblerSyncSum
     let cursor = from;
     for (let page = 0; page < MAX_MESSAGE_PAGES; page += 1) {
       const result = await umblerGet<{
-        messages?: { templateId?: string | null; eventAtUTC?: string }[];
+        messages?: {
+          templateId?: string | null;
+          eventAtUTC?: string;
+          buttons?: { selected?: boolean }[] | null;
+        }[];
       }>(integration, `/v1/chats/${chatId}/relative-messages/`, {
         FromEventUTC: cursor.toISOString(),
         Direction: "TakeAfter",
@@ -145,6 +155,11 @@ async function syncArea(areaId: string, deadline: number): Promise<UmblerSyncSum
 
         if (m.templateId) {
           sendsByTemplate.set(m.templateId, (sendsByTemplate.get(m.templateId) ?? 0) + 1);
+
+          // Conta como clique se PELO MENOS UM botão da mensagem foi selecionado.
+          if (m.buttons?.some((b) => b.selected)) {
+            clicksByTemplate.set(m.templateId, (clicksByTemplate.get(m.templateId) ?? 0) + 1);
+          }
         }
       }
 
@@ -162,6 +177,7 @@ async function syncArea(areaId: string, deadline: number): Promise<UmblerSyncSum
         template_id: templateId,
         template_label: templateLabels.get(templateId) ?? null,
         sends: count,
+        clicks: clicksByTemplate.get(templateId) ?? 0,
       },
       { onConflict: "area_id,day,template_id" },
     );
