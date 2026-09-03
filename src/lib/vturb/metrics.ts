@@ -27,20 +27,38 @@ export type VturbRow = {
   playerId: string;
   views: number;
   uniqueViews: number;
+  /**
+   * ATENÇÃO: mantido com esse nome (e sem mudar de valor) porque
+   * `creative_reports.plays`/a planilha semanal já leem este campo — é na
+   * verdade `total_started_session_uniq` (reproduções ÚNICAS), não o total
+   * bruto. `rawPlays`/`uniquePlays` abaixo são os nomes corretos, pra quem
+   * consome de novo (tabela por criativo em /vturb).
+   */
   plays: number;
+  /** Reproduções brutas (total_started, sem dedupe por sessão). */
+  rawPlays: number;
+  /** Igual a `plays` — nome sem ambiguidade pra novos consumidores. */
+  uniquePlays: number;
   playRate: number | null;
   ctaClicks: number;
   /** % de sessões que ultrapassaram o `pitch_time` do vídeo. */
   pitchRetention: number | null;
+  /** Quantas sessões ultrapassaram o `pitch_time` (contagem bruta, não %). */
+  pitchAudience: number;
+  /** % de engajamento que a própria Vturb calcula (`engagement_rate`). */
+  engagementRate: number | null;
   /** % de sessões ainda assistindo em VTURB_HOOK_THRESHOLD_SECONDS. */
   hookRate: number | null;
   /** % de sessões que chegaram a 25/50/75% da duração do vídeo. */
   retention25: number | null;
   retention50: number | null;
   retention75: number | null;
+  /** % de sessões que chegaram a 60s ("Retenção 1º min"). */
+  retention60: number | null;
   /** Tempo médio assistido (segundos) — aproximado pelo último ponto visto. */
   avgWatchSeconds: number | null;
   conversions: number;
+  conversionRate: number | null;
   /** Receita que a própria Vturb atribui ao criativo (pixel dela, não a nossa). */
   vturbRevenue: number;
 };
@@ -51,11 +69,15 @@ type TrafficOriginStatsRow = {
   grouped_field: string;
   total_viewed: number;
   total_viewed_session_uniq: number;
+  total_started: number;
   total_started_session_uniq: number;
   total_clicked_session_uniq: number;
   play_rate: number | string | null;
   over_pitch_rate: number | string | null;
+  total_over_pitch: number;
+  engagement_rate: number | string | null;
   total_conversions: number;
+  overall_conversion_rate: number | string | null;
   total_amount_brl: number;
 };
 
@@ -208,14 +230,20 @@ export async function getVturbByAd(
 
       // Um ad_id aparecendo em mais de um player (raro — um anúncio deveria
       // levar a uma única VSL) fica com o último player processado.
+      const uniquePlays = Number(row.total_started_session_uniq) || 0;
+
       byAd.set(adId, {
         playerId: player.playerId,
         views: Number(row.total_viewed) || 0,
         uniqueViews: Number(row.total_viewed_session_uniq) || 0,
-        plays: Number(row.total_started_session_uniq) || 0,
+        plays: uniquePlays,
+        rawPlays: Number(row.total_started) || 0,
+        uniquePlays,
         playRate: toNumberOrNull(row.play_rate),
         ctaClicks: Number(row.total_clicked_session_uniq) || 0,
         pitchRetention: toNumberOrNull(row.over_pitch_rate),
+        pitchAudience: Number(row.total_over_pitch) || 0,
+        engagementRate: toNumberOrNull(row.engagement_rate),
         hookRate: groupValues
           ? retentionAt(groupValues, VTURB_HOOK_THRESHOLD_SECONDS)
           : null,
@@ -231,8 +259,10 @@ export async function getVturbByAd(
           groupValues && durationSeconds
             ? retentionAt(groupValues, durationSeconds * 0.75)
             : null,
+        retention60: groupValues ? retentionAt(groupValues, 60) : null,
         avgWatchSeconds: groupValues ? averageWatchSeconds(groupValues) : null,
         conversions: Number(row.total_conversions) || 0,
+        conversionRate: toNumberOrNull(row.overall_conversion_rate),
         // A API devolve o valor em centavos (mesmo formato de /sessions/stats).
         vturbRevenue: (Number(row.total_amount_brl) || 0) / 100,
       });

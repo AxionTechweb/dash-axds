@@ -21,10 +21,14 @@ import { KpiCard } from "@/components/panel/kpi-card";
 import { VturbRetentionChart } from "@/components/panel/vturb-retention-chart";
 import { Card, CardHeader, CardLabel } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
-import { formatCurrency, formatDuration, formatNumber, formatPercent } from "@/lib/format";
+import { getRoasSegmentsByAd } from "@/lib/attribution";
+import { getUsdToBrlRate } from "@/lib/exchange-rate";
+import { formatCurrency, formatDuration, formatNumber, formatPercent, formatRoas } from "@/lib/format";
+import { getMetaEntities } from "@/lib/meta/campaigns";
 import { resolvePeriod } from "@/lib/period";
 import { cn } from "@/lib/utils";
 import { getVturbPlayers } from "@/lib/vturb/client";
+import { getVturbByAd } from "@/lib/vturb/metrics";
 import { getPlayerRetentionCurve, getPlayerStats, getPlayerTrafficOrigin } from "@/lib/vturb/stats";
 
 export const metadata: Metadata = { title: "Vturb" };
@@ -88,6 +92,63 @@ export default async function VturbPage({
     funnel && funnel.countAt3s > 0 ? (funnel.countAt50 / funnel.countAt3s) * 100 : null;
   const retention75 =
     funnel && funnel.countAt3s > 0 ? (funnel.countAt75 / funnel.countAt3s) * 100 : null;
+
+  // Tabela de desempenho por criativo: junta Meta (nível "ad") + Vturb por
+  // ad_id + segmentação de ROAS Front/Backend por ad_id — área inteira, não
+  // só o player selecionado nas abas acima.
+  const [metaAdsResult, vturbByAdResult, roasByAd] = await Promise.all([
+    getMetaEntities(activeArea.id, "ad", period.from, period.to),
+    getVturbByAd(activeArea.id, period.from, period.to),
+    getRoasSegmentsByAd(activeArea.id, period.from, period.to),
+  ]);
+
+  const activeAds = metaAdsResult.rows.filter(
+    (entity) => entity.spend > 0 || entity.impressions > 0,
+  );
+
+  // Câmbio USD→BRL local a esta tabela (mesma decisão já tomada pro
+  // relatório semanal — não mexe na função compartilhada getMetaEntities).
+  const hasUsdAds = activeAds.some((e) => e.accountCurrency?.toUpperCase() === "USD");
+  const fxRate = hasUsdAds ? await getUsdToBrlRate() : null;
+  const creativeTableErrors = [...metaAdsResult.errors, ...vturbByAdResult.errors];
+  if (hasUsdAds && !fxRate) {
+    creativeTableErrors.push(
+      "Câmbio USD→BRL indisponível — gasto em dólar pode estar incorreto na tabela por criativo.",
+    );
+  }
+
+  const creativeRows = activeAds
+    .map((entity) => {
+      const isUsd = entity.accountCurrency?.toUpperCase() === "USD";
+      const fx = isUsd && fxRate ? fxRate.usdToBrl : 1;
+      const spend = entity.spend * fx;
+
+      const vturbRow = vturbByAdResult.byAd.get(entity.id);
+      const roas = roasByAd.get(entity.id);
+      // Backend = Upsell + Downsell + Recuperação (mesma definição do /dashboard).
+      const backendRevenue =
+        (roas?.upsellRevenue ?? 0) + (roas?.downsellRevenue ?? 0) + (roas?.recoveryRevenue ?? 0);
+      const frontRevenue = roas?.frontRevenue ?? 0;
+
+      return {
+        adId: entity.id,
+        adName: entity.name,
+        accountLabel: entity.accountLabel,
+        status: entity.effectiveStatus || entity.status,
+        spend,
+        impressions: entity.impressions,
+        clicks: entity.clicks,
+        cpm: entity.impressions > 0 ? (spend / entity.impressions) * 1000 : 0,
+        ctr: entity.impressions > 0 ? (entity.clicks / entity.impressions) * 100 : 0,
+        cpc: entity.clicks > 0 ? spend / entity.clicks : 0,
+        vturb: vturbRow ?? null,
+        roasFrontRevenue: frontRevenue,
+        roasFront: spend > 0 ? frontRevenue / spend : 0,
+        roasBackendRevenue: backendRevenue,
+        roasBackend: spend > 0 ? backendRevenue / spend : 0,
+      };
+    })
+    .sort((a, b) => b.spend - a.spend);
 
   const tabParams = new URLSearchParams();
   if (params.period) tabParams.set("period", params.period);
@@ -318,6 +379,140 @@ export default async function VturbPage({
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono tabular">
                       {formatCurrency(row.revenue)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardLabel>Desempenho por criativo</CardLabel>
+          <span className="micro-label">Meta + Vturb + ROAS — todos os vídeos, área inteira</span>
+        </CardHeader>
+        {creativeTableErrors.length > 0 ? (
+          <p className="border-b border-border p-4 text-sm text-muted-foreground">
+            {creativeTableErrors.join(" · ")}
+          </p>
+        ) : null}
+        {creativeRows.length === 0 ? (
+          <p className="p-5 text-sm text-muted-foreground">
+            Nenhum criativo com gasto ou impressão no período.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  <Th>Criativo</Th>
+                  <Th>Conta</Th>
+                  <Th>Status</Th>
+                  <Th align="right">Gasto</Th>
+                  <Th align="right">Impressões</Th>
+                  <Th align="right">Cliques</Th>
+                  <Th align="right">CPM</Th>
+                  <Th align="right">CTR</Th>
+                  <Th align="right">CPC</Th>
+                  <Th align="right">Views</Th>
+                  <Th align="right">Unique Views</Th>
+                  <Th align="right">Plays</Th>
+                  <Th align="right">Unique Plays</Th>
+                  <Th align="right">Play Rate</Th>
+                  <Th align="right">Engagement</Th>
+                  <Th align="right">Pitch Retention</Th>
+                  <Th align="right">Pitch Audience</Th>
+                  <Th align="right">Button Clicks</Th>
+                  <Th align="right">Conversions</Th>
+                  <Th align="right">Conversion Rate</Th>
+                  <Th align="right">Revenue (Vturb)</Th>
+                  <Th align="right">Retenção 1º min</Th>
+                  <Th align="right">ROAS Front</Th>
+                  <Th align="right">ROAS Backend</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {creativeRows.map((row) => (
+                  <tr key={row.adId} className="hover:bg-muted/40">
+                    <td className="max-w-xs truncate px-4 py-2.5">{row.adName}</td>
+                    <td className="max-w-[10rem] truncate px-4 py-2.5 text-xs text-muted-foreground">
+                      {row.accountLabel}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.status}</td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatCurrency(row.spend)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.impressions)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.clicks)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatCurrency(row.cpm)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatPercent(row.ctr, 2)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatCurrency(row.cpc)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.vturb?.views ?? 0)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.vturb?.uniqueViews ?? 0)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.vturb?.rawPlays ?? 0)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.vturb?.uniquePlays ?? 0)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.vturb?.playRate !== null && row.vturb?.playRate !== undefined
+                        ? formatPercent(row.vturb.playRate, 2)
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.vturb?.engagementRate !== null && row.vturb?.engagementRate !== undefined
+                        ? formatPercent(row.vturb.engagementRate, 2)
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.vturb?.pitchRetention !== null && row.vturb?.pitchRetention !== undefined
+                        ? formatPercent(row.vturb.pitchRetention, 2)
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.vturb?.pitchAudience ?? 0)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.vturb?.ctaClicks ?? 0)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.vturb?.conversions ?? 0)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.vturb?.conversionRate !== null && row.vturb?.conversionRate !== undefined
+                        ? formatPercent(row.vturb.conversionRate, 2)
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatCurrency(row.vturb?.vturbRevenue ?? 0)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.vturb?.retention60 !== null && row.vturb?.retention60 !== undefined
+                        ? formatPercent(row.vturb.retention60, 2)
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatRoas(row.roasFront)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatRoas(row.roasBackend)}
                     </td>
                   </tr>
                 ))}

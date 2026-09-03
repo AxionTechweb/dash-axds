@@ -225,7 +225,17 @@ export async function getFunnelBase(
   }
 }
 
-type ApprovedSaleWithRecovery = { valor: number; recovered: boolean };
+type ApprovedSaleWithRecovery = {
+  valor: number;
+  recovered: boolean;
+  /**
+   * ad_id a creditar: da PRÓPRIA venda quando não recuperada; do ABANDONO
+   * original quando recuperada (decisão do usuário — o anúncio que trouxe o
+   * lead na primeira tentativa é quem "gerou" a venda, mesmo que ela tenha
+   * fechado depois por outro canal, ex.: WhatsApp, sem clique em anúncio novo).
+   */
+  adId: string | null;
+};
 
 /**
  * Vendas aprovadas do período, cada uma marcada como `recovered` quando o
@@ -248,14 +258,14 @@ async function getApprovedSalesWithRecoveryFlag(
   const [abandoned, approved] = await Promise.all([
     supabase
       .from("purchases")
-      .select("email, telefone, created_at")
+      .select("email, telefone, ad_id, created_at")
       .eq("area_id", areaId)
       .eq("status", "abandoned")
       .lte("created_at", to.toISOString())
       .limit(20_000),
     supabase
       .from("purchases")
-      .select("email, telefone, valor, created_at")
+      .select("email, telefone, ad_id, valor, created_at")
       .eq("area_id", areaId)
       .eq("status", "approved")
       .gte("created_at", from.toISOString())
@@ -266,24 +276,30 @@ async function getApprovedSalesWithRecoveryFlag(
   const buyerKey = (row: { email?: string | null; telefone?: string | null }) =>
     row.email ?? row.telefone ?? null;
 
-  // Guarda o abandono MAIS ANTIGO por comprador — só precisa de um ponto
-  // de referência pra checar "a aprovação veio depois de algum abandono".
-  const earliestAbandonByBuyer = new Map<string, number>();
+  // Guarda o abandono MAIS ANTIGO por comprador (+ o ad_id daquele abandono)
+  // — só precisa de um ponto de referência pra checar "a aprovação veio
+  // depois de algum abandono" e creditar o anúncio certo.
+  const earliestAbandonByBuyer = new Map<string, { at: number; adId: string | null }>();
   for (const row of abandoned.data ?? []) {
     const key = buyerKey(row);
     if (!key) continue;
     const at = new Date(row.created_at as string).getTime();
     const current = earliestAbandonByBuyer.get(key);
-    if (current === undefined || at < current) earliestAbandonByBuyer.set(key, at);
+    if (!current || at < current.at) {
+      earliestAbandonByBuyer.set(key, { at, adId: (row.ad_id as string | null) ?? null });
+    }
   }
 
   return (approved.data ?? []).map((row) => {
     const key = buyerKey(row);
-    const abandonedAt = key ? earliestAbandonByBuyer.get(key) : undefined;
+    const abandon = key ? earliestAbandonByBuyer.get(key) : undefined;
     const recovered =
-      abandonedAt !== undefined &&
-      new Date(row.created_at as string).getTime() > abandonedAt;
-    return { valor: Number(row.valor) || 0, recovered };
+      abandon !== undefined && new Date(row.created_at as string).getTime() > abandon.at;
+    return {
+      valor: Number(row.valor) || 0,
+      recovered,
+      adId: recovered ? (abandon?.adId ?? null) : ((row.ad_id as string | null) ?? null),
+    };
   });
 }
 
@@ -334,14 +350,37 @@ const EMPTY_ROAS_SEGMENTS: RoasSegments = {
 };
 
 /**
+ * Acumula UMA venda num bucket de RoasSegments, em cima do objeto passado
+ * (mutação direta — quem chama decide se é um acumulador único, área inteira,
+ * ou um por ad_id). Recuperação tem PRIORIDADE sobre o valor — por decisão
+ * explícita do usuário, uma venda de R$197 recuperada de um abandono NÃO
+ * conta como Front, só como Recuperação (dentro do Backend). Sem isso, a
+ * mesma receita apareceria nos dois ROAS ao mesmo tempo.
+ */
+function accumulateRoasSegment(segments: RoasSegments, sale: ApprovedSaleWithRecovery): void {
+  if (sale.recovered) {
+    segments.recoveryRevenue += sale.valor;
+    segments.recoveryCount += 1;
+    return;
+  }
+
+  const tier = classifySaleByValue(sale.valor);
+  if (tier === "front") {
+    segments.frontRevenue += sale.valor;
+    segments.frontCount += 1;
+  } else if (tier === "upsell") {
+    segments.upsellRevenue += sale.valor;
+    segments.upsellCount += 1;
+  } else if (tier === "downsell") {
+    segments.downsellRevenue += sale.valor;
+    segments.downsellCount += 1;
+  }
+}
+
+/**
  * Segmenta as vendas aprovadas do período pra "ROAS Front" vs "ROAS Backend"
  * (pedido do usuário): Front = venda principal (R$197), Backend = Upsell
  * (R$297) + Downsell (R$97) + Recuperação de carrinho via Umbler.
- *
- * Recuperação tem PRIORIDADE sobre o valor — por decisão explícita do
- * usuário, uma venda de R$197 recuperada de um abandono NÃO conta como
- * Front, só como Recuperação (dentro do Backend). Sem isso, a mesma receita
- * apareceria nos dois ROAS ao mesmo tempo.
  */
 export async function getRoasSegments(
   areaId: string,
@@ -351,29 +390,35 @@ export async function getRoasSegments(
   try {
     const sales = await getApprovedSalesWithRecoveryFlag(areaId, from, to);
     const segments = { ...EMPTY_ROAS_SEGMENTS };
-
-    for (const sale of sales) {
-      if (sale.recovered) {
-        segments.recoveryRevenue += sale.valor;
-        segments.recoveryCount += 1;
-        continue;
-      }
-
-      const tier = classifySaleByValue(sale.valor);
-      if (tier === "front") {
-        segments.frontRevenue += sale.valor;
-        segments.frontCount += 1;
-      } else if (tier === "upsell") {
-        segments.upsellRevenue += sale.valor;
-        segments.upsellCount += 1;
-      } else if (tier === "downsell") {
-        segments.downsellRevenue += sale.valor;
-        segments.downsellCount += 1;
-      }
-    }
-
+    for (const sale of sales) accumulateRoasSegment(segments, sale);
     return segments;
   } catch {
     return EMPTY_ROAS_SEGMENTS;
   }
+}
+
+/**
+ * Mesma segmentação de `getRoasSegments`, mas quebrada por `ad_id` — usada
+ * na tabela de desempenho por criativo (/vturb). Vendas sem ad_id atribuível
+ * (nem na própria venda, nem no abandono original de uma recuperação) ficam
+ * de fora — não há criativo pra creditar.
+ */
+export async function getRoasSegmentsByAd(
+  areaId: string,
+  from: Date,
+  to: Date,
+): Promise<Map<string, RoasSegments>> {
+  const byAd = new Map<string, RoasSegments>();
+  try {
+    const sales = await getApprovedSalesWithRecoveryFlag(areaId, from, to);
+    for (const sale of sales) {
+      if (!sale.adId) continue;
+      const segments = byAd.get(sale.adId) ?? { ...EMPTY_ROAS_SEGMENTS };
+      accumulateRoasSegment(segments, sale);
+      byAd.set(sale.adId, segments);
+    }
+  } catch {
+    return new Map();
+  }
+  return byAd;
 }
