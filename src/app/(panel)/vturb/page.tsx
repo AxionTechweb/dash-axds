@@ -129,10 +129,23 @@ export default async function VturbPage({
       const backendRevenue =
         (roas?.upsellRevenue ?? 0) + (roas?.downsellRevenue ?? 0) + (roas?.recoveryRevenue ?? 0);
       const frontRevenue = roas?.frontRevenue ?? 0;
+      const purchases =
+        (roas?.frontCount ?? 0) +
+        (roas?.upsellCount ?? 0) +
+        (roas?.downsellCount ?? 0) +
+        (roas?.recoveryCount ?? 0);
+      const pageViews = entity.metaLandingPageView;
+      const uniqueViews = vturbRow?.uniqueViews ?? 0;
 
       return {
         adId: entity.id,
         adName: entity.name,
+        pageViews,
+        // EPC (nome herdado da planilha de referência do usuário, fórmula
+        // literal não é "receita/clique" apesar do nome): Page View / Purchase.
+        epc: purchases > 0 ? pageViews / purchases : 0,
+        // RPV: Receita (front+backend) / Visualizações únicas da Vturb.
+        rpv: uniqueViews > 0 ? (frontRevenue + backendRevenue) / uniqueViews : 0,
         accountLabel: entity.accountLabel,
         status: entity.effectiveStatus || entity.status,
         spend,
@@ -429,6 +442,8 @@ export default async function VturbPage({
                   <Th align="right">Conversion Rate</Th>
                   <Th align="right">Revenue (Vturb)</Th>
                   <Th align="right">Retenção 1º min</Th>
+                  <Th align="right">EPC</Th>
+                  <Th align="right">RPV</Th>
                   <Th align="right">ROAS Front</Th>
                   <Th align="right">ROAS Backend</Th>
                 </tr>
@@ -507,6 +522,12 @@ export default async function VturbPage({
                       {row.vturb?.retention60 !== null && row.vturb?.retention60 !== undefined
                         ? formatPercent(row.vturb.retention60, 2)
                         : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.epc, 2)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatCurrency(row.rpv)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono tabular">
                       {formatRoas(row.roasFront)}
