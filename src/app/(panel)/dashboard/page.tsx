@@ -276,6 +276,18 @@ export default async function DashboardPage({
             sub="Clientes distintos, por e-mail"
           />
           <KpiCard
+            label="Conversão Funil"
+            value={
+              meta.insights.landingPageView > 0
+                ? formatPercent((safeMetrics.uniqueSales / meta.insights.landingPageView) * 100, 2)
+                : "—"
+            }
+            icon={Target}
+            accent="emerald"
+            sensitive={false}
+            sub="Vendas únicas / Page View"
+          />
+          <KpiCard
             label="Reembolsos"
             value={formatCurrency(safeMetrics.refundedValue, currency)}
             icon={Undo2}
