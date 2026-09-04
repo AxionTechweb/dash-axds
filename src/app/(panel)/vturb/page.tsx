@@ -434,6 +434,10 @@ export default async function VturbPage({
                   <Th align="right">Plays</Th>
                   <Th align="right">Unique Plays</Th>
                   <Th align="right">Play Rate</Th>
+                  <Th align="right">Hook Rate</Th>
+                  <Th align="right">Retenção 25%</Th>
+                  <Th align="right">Retenção 50%</Th>
+                  <Th align="right">Retenção 75%</Th>
                   <Th align="right">Engagement</Th>
                   <Th align="right">Pitch Retention</Th>
                   <Th align="right">Pitch Audience</Th>
@@ -489,6 +493,29 @@ export default async function VturbPage({
                     <td className="px-4 py-2.5 text-right font-mono tabular">
                       {row.vturb?.playRate !== null && row.vturb?.playRate !== undefined
                         ? formatPercent(row.vturb.playRate, 2)
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.vturb?.funnelHookRate !== null && row.vturb?.funnelHookRate !== undefined
+                        ? formatPercent(row.vturb.funnelHookRate, 2)
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.vturb?.funnelRetention25 !== null &&
+                      row.vturb?.funnelRetention25 !== undefined
+                        ? formatPercent(row.vturb.funnelRetention25, 2)
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.vturb?.funnelRetention50 !== null &&
+                      row.vturb?.funnelRetention50 !== undefined
+                        ? formatPercent(row.vturb.funnelRetention50, 2)
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.vturb?.funnelRetention75 !== null &&
+                      row.vturb?.funnelRetention75 !== undefined
+                        ? formatPercent(row.vturb.funnelRetention75, 2)
                         : "—"}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono tabular">

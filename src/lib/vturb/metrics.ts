@@ -55,6 +55,17 @@ export type VturbRow = {
   retention75: number | null;
   /** % de sessões que chegaram a 60s ("Retenção 1º min"). */
   retention60: number | null;
+  /**
+   * Funil pedido pelo usuário pra tabela por criativo — DIFERENTE de
+   * `hookRate`/`retention25/50/75` acima: gancho fixo em 3s (não
+   * VTURB_HOOK_THRESHOLD_SECONDS=5s) relativo a VIEWS (não ao total de
+   * sessões), e cada retenção seguinte relativa à contagem do gancho de 3s,
+   * não ao total — mesma fórmula já usada nos KPIs de /vturb (stats.ts).
+   */
+  funnelHookRate: number | null;
+  funnelRetention25: number | null;
+  funnelRetention50: number | null;
+  funnelRetention75: number | null;
   /** Tempo médio assistido (segundos) — aproximado pelo último ponto visto. */
   avgWatchSeconds: number | null;
   conversions: number;
@@ -114,6 +125,18 @@ function retentionAt(
   }
 
   return total > 0 ? (retained / total) * 100 : null;
+}
+
+/** Contagem BRUTA (não %) de usuários cujo ponto mais distante é >= um limiar. */
+function countAtOrAbove(
+  groupValues: EngagementByOriginRow["group_values"],
+  thresholdSeconds: number,
+): number {
+  if (!groupValues || groupValues.length === 0) return 0;
+  return groupValues.reduce(
+    (sum, { timed, totalUsers }) => sum + (timed >= thresholdSeconds ? totalUsers : 0),
+    0,
+  );
 }
 
 /** Tempo médio assistido = média do último ponto visto, ponderada por usuário. */
@@ -231,10 +254,22 @@ export async function getVturbByAd(
       // Um ad_id aparecendo em mais de um player (raro — um anúncio deveria
       // levar a uma única VSL) fica com o último player processado.
       const uniquePlays = Number(row.total_started_session_uniq) || 0;
+      const views = Number(row.total_viewed) || 0;
+
+      // Funil (Hook Rate / Retenção 25-50-75%) pedido pra tabela por
+      // criativo: gancho fixo em 3s sobre views, retenções seguintes sobre
+      // a contagem do gancho — ver comentário do tipo `funnelHookRate`.
+      const countAt3s = groupValues ? countAtOrAbove(groupValues, 3) : 0;
+      const countAt25 =
+        groupValues && durationSeconds ? countAtOrAbove(groupValues, durationSeconds * 0.25) : 0;
+      const countAt50 =
+        groupValues && durationSeconds ? countAtOrAbove(groupValues, durationSeconds * 0.5) : 0;
+      const countAt75 =
+        groupValues && durationSeconds ? countAtOrAbove(groupValues, durationSeconds * 0.75) : 0;
 
       byAd.set(adId, {
         playerId: player.playerId,
-        views: Number(row.total_viewed) || 0,
+        views,
         uniqueViews: Number(row.total_viewed_session_uniq) || 0,
         plays: uniquePlays,
         rawPlays: Number(row.total_started) || 0,
@@ -265,6 +300,10 @@ export async function getVturbByAd(
         conversionRate: toNumberOrNull(row.overall_conversion_rate),
         // A API devolve o valor em centavos (mesmo formato de /sessions/stats).
         vturbRevenue: (Number(row.total_amount_brl) || 0) / 100,
+        funnelHookRate: views > 0 ? (countAt3s / views) * 100 : null,
+        funnelRetention25: countAt3s > 0 ? (countAt25 / countAt3s) * 100 : null,
+        funnelRetention50: countAt3s > 0 ? (countAt50 / countAt3s) * 100 : null,
+        funnelRetention75: countAt3s > 0 ? (countAt75 / countAt3s) * 100 : null,
       });
     }
   }
