@@ -70,18 +70,89 @@ async function checkNoSalesAlert(areaId: string): Promise<void> {
 }
 
 /**
- * Cooldown mínimo entre dois avisos da MESMA conta desativada — descoberto
- * em produção que `account_status` da Meta pisca entre ativo/desativado
- * (revisão/apelação em andamento, ou uma corrida entre execuções do cron
- * externo se sobrepondo) enquanto a conta segue desativada de fato. A
- * detecção antiga (transição "estava ativa → não está mais", guardada num
- * único campo `last_known_status`) reagia a CADA piscada, mandando o mesmo
- * aviso várias vezes por dia. Agora usa `alert_state` (mesmo padrão de
- * `checkNoSalesAlert`) com um cooldown de tempo — imune a essa piscada e à
- * corrida entre execuções, já que a janela de "já avisei" passa a ser de
- * horas, não de milissegundos entre leitura e escrita.
+ * Quantas checagens SEGUIDAS precisam ver o problema resolvido antes de
+ * rearmar o alerta — descoberto em produção que tanto `account_status`
+ * quanto `effective_status` de anúncio podem "piscar" (revisão/apelação em
+ * andamento na Meta, ou uma corrida entre execuções do cron externo se
+ * sobrepondo). Uma detecção ingênua de transição ("estava ok → não está
+ * mais") reage a CADA piscada e manda o mesmo aviso várias vezes por dia —
+ * exigir confirmação sustentada filtra isso sem exigir um valor de tempo
+ * arbitrário (a cadência real do cron externo pode variar).
  */
-const ACCOUNT_STATUS_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const RECOVERY_CONFIRM_CHECKS = 3;
+
+type AlertDedupState = { consecutiveOkChecks?: number };
+
+/**
+ * Garante que um alerta binário (ok/problema) — conta desativada, criativo
+ * reprovado — dispare exatamente UMA VEZ por episódio, mesmo com o sinal de
+ * origem instável: só rearma depois de ver o estado OK se confirmar em
+ * `RECOVERY_CONFIRM_CHECKS` execuções seguidas, não na primeira volta ao
+ * normal (que pode ser só uma piscada). Devolve `true` quando deve notificar
+ * agora; quem chama decide a mensagem e chama `notifyArea`.
+ */
+async function shouldNotifyOnce(
+  admin: ReturnType<typeof createAdminClient>,
+  areaId: string,
+  alertType: string,
+  isProblem: boolean,
+): Promise<boolean> {
+  const { data: state } = await admin
+    .from("alert_state")
+    .select("last_state")
+    .eq("area_id", areaId)
+    .eq("alert_type", alertType)
+    .maybeSingle();
+
+  const alreadyAlerted = state !== null;
+
+  if (isProblem) {
+    if (!alreadyAlerted) {
+      await admin.from("alert_state").upsert(
+        {
+          area_id: areaId,
+          alert_type: alertType,
+          last_alerted_at: new Date().toISOString(),
+          last_state: { consecutiveOkChecks: 0 } satisfies AlertDedupState,
+        },
+        { onConflict: "area_id,alert_type" },
+      );
+      return true;
+    }
+
+    // Já alertado — viu o problema de novo, zera qualquer confirmação de
+    // recuperação em andamento (não deixa uma piscada de volta ao normal
+    // quase completar a contagem e rearmar cedo demais).
+    const consecutiveOkChecks = (state.last_state as AlertDedupState | null)?.consecutiveOkChecks ?? 0;
+    if (consecutiveOkChecks !== 0) {
+      await admin
+        .from("alert_state")
+        .update({ last_state: { consecutiveOkChecks: 0 } satisfies AlertDedupState })
+        .eq("area_id", areaId)
+        .eq("alert_type", alertType);
+    }
+    return false;
+  }
+
+  // Está OK agora.
+  if (!alreadyAlerted) return false; // nunca alertou — nada a "recuperar"
+
+  const consecutiveOkChecks =
+    ((state.last_state as AlertDedupState | null)?.consecutiveOkChecks ?? 0) + 1;
+
+  if (consecutiveOkChecks >= RECOVERY_CONFIRM_CHECKS) {
+    // Recuperação confirmada — apaga o estado pra um futuro problema real
+    // avisar de novo, em vez de ficar preso ao episódio antigo.
+    await admin.from("alert_state").delete().eq("area_id", areaId).eq("alert_type", alertType);
+  } else {
+    await admin
+      .from("alert_state")
+      .update({ last_state: { consecutiveOkChecks } satisfies AlertDedupState })
+      .eq("area_id", areaId)
+      .eq("alert_type", alertType);
+  }
+  return false;
+}
 
 async function checkAccountStatusAlerts(areaId: string): Promise<void> {
   const admin = createAdminClient();
@@ -98,34 +169,12 @@ async function checkAccountStatusAlerts(areaId: string): Promise<void> {
     const isActive = result.status === 1;
     const alertType = `account_status:${account.ad_account_id}`;
 
-    const { data: state } = await admin
-      .from("alert_state")
-      .select("last_alerted_at")
-      .eq("area_id", areaId)
-      .eq("alert_type", alertType)
-      .maybeSingle();
-
-    if (!isActive) {
-      const lastAlertedAt = state?.last_alerted_at ? new Date(state.last_alerted_at as string) : null;
-      const inCooldown =
-        lastAlertedAt !== null &&
-        Date.now() - lastAlertedAt.getTime() < ACCOUNT_STATUS_COOLDOWN_MS;
-
-      if (!inCooldown) {
-        const label = accountStatusLabel(result.status) ?? `status ${result.status}`;
-        await notifyArea(
-          areaId,
-          `🚫 Conta de anúncio "${account.label}" foi desativada na Meta (${label}). As campanhas dessa conta pararam de rodar.`,
-        );
-        await admin.from("alert_state").upsert(
-          { area_id: areaId, alert_type: alertType, last_alerted_at: new Date().toISOString() },
-          { onConflict: "area_id,alert_type" },
-        );
-      }
-    } else if (state) {
-      // Reativou de verdade — limpa o estado pra um futuro desativamento
-      // avisar de novo em vez de ficar preso no cooldown de um episódio antigo.
-      await admin.from("alert_state").delete().eq("area_id", areaId).eq("alert_type", alertType);
+    if (await shouldNotifyOnce(admin, areaId, alertType, !isActive)) {
+      const label = accountStatusLabel(result.status) ?? `status ${result.status}`;
+      await notifyArea(
+        areaId,
+        `🚫 Conta de anúncio "${account.label}" foi desativada na Meta (${label}). As campanhas dessa conta pararam de rodar.`,
+      );
     }
 
     // Só pra exibição/depuração — a decisão de alertar não depende mais disso.
@@ -136,31 +185,10 @@ async function checkAccountStatusAlerts(areaId: string): Promise<void> {
   }
 }
 
-/**
- * Reusa a tabela genérica `alert_state` (mesmo esquema do comentário original
- * dela: "account_status:act_123") com `alert_type = "ad_rejected:<ad_id>"` —
- * dedup por status ARMAZENADO em `last_state.status`, sem precisar de tabela
- * nova só pra isso. Só grava linha pra anúncio que JÁ foi ou está reprovado
- * (a maioria nunca é, e não vale a pena gravar uma linha por anúncio da
- * conta inteira).
- */
 async function checkAdRejectionAlerts(areaId: string): Promise<void> {
   const admin = createAdminClient();
   const accounts = await getAdAccounts(areaId);
   if (accounts.length === 0) return;
-
-  const { data: stateRows } = await admin
-    .from("alert_state")
-    .select("alert_type, last_state")
-    .eq("area_id", areaId)
-    .like("alert_type", "ad_rejected:%");
-
-  const previousStatusByAdId = new Map<string, string | null>();
-  for (const row of stateRows ?? []) {
-    const adId = (row.alert_type as string).slice("ad_rejected:".length);
-    const status = (row.last_state as { status?: string } | null)?.status ?? null;
-    previousStatusByAdId.set(adId, status);
-  }
 
   for (const account of accounts) {
     if (!account.ads_token) continue;
@@ -170,27 +198,16 @@ async function checkAdRejectionAlerts(areaId: string): Promise<void> {
     if (result.error) continue;
 
     for (const ad of result.data) {
-      const isRejectedNow = ad.effectiveStatus === "DISAPPROVED";
-      const wasRejected = previousStatusByAdId.get(ad.id) === "DISAPPROVED";
-      if (isRejectedNow === wasRejected) continue; // sem mudança de estado
+      const isRejected = ad.effectiveStatus === "DISAPPROVED";
+      const alertType = `ad_rejected:${ad.id}`;
 
-      if (isRejectedNow) {
+      if (await shouldNotifyOnce(admin, areaId, alertType, isRejected)) {
         const reason = ad.reason ?? "motivo não especificado pela Meta.";
         await notifyArea(
           areaId,
           `🚫 Criativo reprovado na Meta — "${ad.name}" (${account.label}).\nMotivo: ${reason}`,
         );
       }
-
-      await admin.from("alert_state").upsert(
-        {
-          area_id: areaId,
-          alert_type: `ad_rejected:${ad.id}`,
-          ...(isRejectedNow ? { last_alerted_at: new Date().toISOString() } : {}),
-          last_state: { status: ad.effectiveStatus, reason: ad.reason ?? null },
-        },
-        { onConflict: "area_id,alert_type" },
-      );
     }
   }
 }
