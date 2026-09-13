@@ -69,6 +69,20 @@ async function checkNoSalesAlert(areaId: string): Promise<void> {
     );
 }
 
+/**
+ * Cooldown mínimo entre dois avisos da MESMA conta desativada — descoberto
+ * em produção que `account_status` da Meta pisca entre ativo/desativado
+ * (revisão/apelação em andamento, ou uma corrida entre execuções do cron
+ * externo se sobrepondo) enquanto a conta segue desativada de fato. A
+ * detecção antiga (transição "estava ativa → não está mais", guardada num
+ * único campo `last_known_status`) reagia a CADA piscada, mandando o mesmo
+ * aviso várias vezes por dia. Agora usa `alert_state` (mesmo padrão de
+ * `checkNoSalesAlert`) com um cooldown de tempo — imune a essa piscada e à
+ * corrida entre execuções, já que a janela de "já avisei" passa a ser de
+ * horas, não de milissegundos entre leitura e escrita.
+ */
+const ACCOUNT_STATUS_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
 async function checkAccountStatusAlerts(areaId: string): Promise<void> {
   const admin = createAdminClient();
   const accounts = await getAdAccounts(areaId);
@@ -77,28 +91,44 @@ async function checkAccountStatusAlerts(areaId: string): Promise<void> {
   for (const account of accounts) {
     if (!account.ads_token) continue;
 
-    const { data: row } = await admin
-      .from("meta_ad_accounts")
-      .select("last_known_status")
-      .eq("id", account.id)
-      .maybeSingle();
-    const previousStatus = (row?.last_known_status as number | null | undefined) ?? null;
-
     const result = await getAccountStatus(account.ads_token, account.ad_account_id);
     // Erro de rede/token não é uma transição de status — não alerta por isso.
     if (result.error || result.status === null) continue;
 
-    const wasActive = previousStatus === null || previousStatus === 1;
     const isActive = result.status === 1;
+    const alertType = `account_status:${account.ad_account_id}`;
 
-    if (wasActive && !isActive) {
-      const label = accountStatusLabel(result.status) ?? `status ${result.status}`;
-      await notifyArea(
-        areaId,
-        `🚫 Conta de anúncio "${account.label}" foi desativada na Meta (${label}). As campanhas dessa conta pararam de rodar.`,
-      );
+    const { data: state } = await admin
+      .from("alert_state")
+      .select("last_alerted_at")
+      .eq("area_id", areaId)
+      .eq("alert_type", alertType)
+      .maybeSingle();
+
+    if (!isActive) {
+      const lastAlertedAt = state?.last_alerted_at ? new Date(state.last_alerted_at as string) : null;
+      const inCooldown =
+        lastAlertedAt !== null &&
+        Date.now() - lastAlertedAt.getTime() < ACCOUNT_STATUS_COOLDOWN_MS;
+
+      if (!inCooldown) {
+        const label = accountStatusLabel(result.status) ?? `status ${result.status}`;
+        await notifyArea(
+          areaId,
+          `🚫 Conta de anúncio "${account.label}" foi desativada na Meta (${label}). As campanhas dessa conta pararam de rodar.`,
+        );
+        await admin.from("alert_state").upsert(
+          { area_id: areaId, alert_type: alertType, last_alerted_at: new Date().toISOString() },
+          { onConflict: "area_id,alert_type" },
+        );
+      }
+    } else if (state) {
+      // Reativou de verdade — limpa o estado pra um futuro desativamento
+      // avisar de novo em vez de ficar preso no cooldown de um episódio antigo.
+      await admin.from("alert_state").delete().eq("area_id", areaId).eq("alert_type", alertType);
     }
 
+    // Só pra exibição/depuração — a decisão de alertar não depende mais disso.
     await admin
       .from("meta_ad_accounts")
       .update({ last_known_status: result.status })
