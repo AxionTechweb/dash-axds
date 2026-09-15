@@ -12,7 +12,13 @@ import { notifyArea } from "@/lib/whatsapp/client";
  *  2. Conta de anúncio desativada na Meta (account_status != 1).
  *  3. Criativo reprovado na Meta (effective_status = DISAPPROVED), com o
  *     motivo da reprovação.
- * (O quarto gatilho — Regra de automação pausando algo — vive dentro do
+ *  4. PIX travado: várias compras em "aguardando pagamento" por mais tempo
+ *     do que o PIX normalmente leva pra confirmar ou o cliente desistir —
+ *     não existe API gratuita/oficial de status do PIX em tempo real (nem
+ *     Downdetector cobre o Brasil, nem os dados abertos do Banco Central são
+ *     status ao vivo — só estatística agregada), então o sinal vem de dentro:
+ *     a própria operação parando de confirmar PIX é o indício mais direto.
+ * (O quinto gatilho — Regra de automação pausando algo — vive dentro do
  * próprio motor de Regras, src/lib/rules/engine.ts, porque é lá que a pausa
  * acontece de fato.)
  *
@@ -154,6 +160,51 @@ async function shouldNotifyOnce(
   return false;
 }
 
+/**
+ * PIX normalmente confirma em segundos ou o cliente desiste — ficar em
+ * "aguardando pagamento" por mais de 15 minutos é sempre anormal. Exige
+ * VÁRIAS compras presas ao mesmo tempo (não só uma), pra não confundir um
+ * cliente lento/indeciso isolado com instabilidade de verdade no PIX.
+ *
+ * A janela tem limite inferior E superior: descoberto em produção que a
+ * plataforma de checkout nunca marca um PIX expirado como "abandoned" — o
+ * registro fica em `waiting_payment` PRA SEMPRE (achamos 161 assim, o mais
+ * recente com quase 30h). Sem o limite de baixo (só olhar "criado há mais de
+ * 15min"), esse lixo antigo acumulado dispararia o alerta sempre, falso
+ * positivo permanente. Com o limite de cima também, só entra quem foi criado
+ * numa janela recente — sinal de problema ACONTECENDO agora, não histórico.
+ */
+const PIX_STUCK_THRESHOLD_MS = 15 * 60 * 1000;
+const PIX_RECENT_WINDOW_MS = 2 * 60 * 60 * 1000;
+const PIX_STUCK_MIN_COUNT = 3;
+
+async function checkPixOutageAlert(areaId: string): Promise<void> {
+  const admin = createAdminClient();
+  const stuckCutoff = new Date(Date.now() - PIX_STUCK_THRESHOLD_MS);
+  const recentWindowStart = new Date(Date.now() - PIX_RECENT_WINDOW_MS);
+
+  const { count, error } = await admin
+    .from("purchases")
+    .select("id", { count: "exact", head: true })
+    .eq("area_id", areaId)
+    .eq("payment_method", "PIX")
+    .eq("status", "waiting_payment")
+    .gte("created_at", recentWindowStart.toISOString())
+    .lte("created_at", stuckCutoff.toISOString());
+
+  if (error) return; // falha de leitura não é sinal de PIX travado
+
+  const stuckCount = count ?? 0;
+  const isProblem = stuckCount >= PIX_STUCK_MIN_COUNT;
+
+  if (await shouldNotifyOnce(admin, areaId, "pix_outage", isProblem)) {
+    await notifyArea(
+      areaId,
+      `⚠️ ${stuckCount} pagamentos via PIX presos em "aguardando pagamento" há mais de 15 minutos. Pode ser instabilidade no PIX, não só desistência de cliente — vale conferir.`,
+    );
+  }
+}
+
 async function checkAccountStatusAlerts(areaId: string): Promise<void> {
   const admin = createAdminClient();
   const accounts = await getAdAccounts(areaId);
@@ -228,6 +279,12 @@ export async function runAlertsForAllAreas(): Promise<AlertsAreaResult[]> {
       await checkNoSalesAlert(areaId);
     } catch (err) {
       errors.push(`no_sales: ${err instanceof Error ? err.message : "erro desconhecido"}`);
+    }
+
+    try {
+      await checkPixOutageAlert(areaId);
+    } catch (err) {
+      errors.push(`pix_outage: ${err instanceof Error ? err.message : "erro desconhecido"}`);
     }
 
     try {
