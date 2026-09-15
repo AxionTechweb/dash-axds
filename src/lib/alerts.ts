@@ -200,7 +200,7 @@ async function checkPixOutageAlert(areaId: string): Promise<void> {
   if (await shouldNotifyOnce(admin, areaId, "pix_outage", isProblem)) {
     await notifyArea(
       areaId,
-      `⚠️ ${stuckCount} pagamentos via PIX presos em "aguardando pagamento" há mais de 15 minutos. Pode ser instabilidade no PIX, não só desistência de cliente — vale conferir.`,
+      `⚠️ ${stuckCount} pagamentos via PIX presos em "aguardando pagamento" há mais de 15 minutos. Pode ser instabilidade no PIX, não só desistência de cliente.\nConfere manualmente aqui: https://downdetector.com.br/en/status/pix/`,
     );
   }
 }
