@@ -1586,6 +1586,19 @@ alter table public.creative_reports
 alter table public.umbler_template_sends
   add column if not exists clicks integer not null default 0;
 
+-- =============================================================================
+-- 20260914120000_meta_account_alerts_muted.sql
+-- =============================================================================
+-- Silenciar o alerta de "conta desativada" por conta — pedido do usuário
+-- depois de account_status da Meta ficar piscando por dias numa conta já
+-- desativada há semanas (USD 3): a confirmação de recuperação sustentada
+-- (3 checagens seguidas) não bastou porque a piscada durou mais que isso.
+-- Em vez de tentar afinar o algoritmo pra sempre, dá controle manual.
+-- =============================================================================
+
+alter table public.meta_ad_accounts
+  add column if not exists alerts_muted boolean not null default false;
+
 -- ---------------------------------------------------------------------
 -- Histórico de migrations: faz um futuro `supabase db push` saber que
 -- estas já foram aplicadas, evitando reaplicar tudo por cima.
@@ -1621,7 +1634,8 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260828120000', 'creative_reports_extra_columns'),
   ('20260828120100', 'fix_retention_columns_precision'),
   ('20260828120200', 'add_ticket_medio_column'),
-  ('20260901120000', 'umbler_template_clicks')
+  ('20260901120000', 'umbler_template_clicks'),
+  ('20260914120000', 'meta_account_alerts_muted')
 on conflict (version) do nothing;
 
 commit;

@@ -160,7 +160,7 @@ async function checkAccountStatusAlerts(areaId: string): Promise<void> {
   if (accounts.length === 0) return;
 
   for (const account of accounts) {
-    if (!account.ads_token) continue;
+    if (!account.ads_token || account.alerts_muted) continue;
 
     const result = await getAccountStatus(account.ads_token, account.ad_account_id);
     // Erro de rede/token não é uma transição de status — não alerta por isso.

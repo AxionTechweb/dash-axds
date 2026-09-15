@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Loader2, Plug, Search, Trash2 } from "lucide-react";
+import { Bell, BellOff, Check, Loader2, Plug, Search, Trash2 } from "lucide-react";
 import { useActionState, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
   connectAccounts,
   deleteAdAccount,
   discoverAccounts,
+  toggleAccountAlertMute,
   type DiscoverState,
   type FormState,
 } from "./actions";
@@ -21,6 +22,7 @@ export type AccountRow = {
   label: string;
   ad_account_id: string;
   hasToken: boolean;
+  alertsMuted: boolean;
 };
 
 function Feedback({ state }: { state: { error?: string; ok?: string } }) {
@@ -39,6 +41,10 @@ function Feedback({ state }: { state: { error?: string; ok?: string } }) {
 function ConnectedAccount({ account }: { account: AccountRow }) {
   const [state, action, pending] = useActionState<FormState, FormData>(
     deleteAdAccount,
+    {},
+  );
+  const [muteState, muteAction, mutePending] = useActionState<FormState, FormData>(
+    toggleAccountAlertMute,
     {},
   );
 
@@ -60,6 +66,34 @@ function ConnectedAccount({ account }: { account: AccountRow }) {
           <Check className="size-3" /> token
         </span>
       ) : null}
+
+      <form action={muteAction}>
+        <input type="hidden" name="id" value={account.id} />
+        <input type="hidden" name="muted" value={(!account.alertsMuted).toString()} />
+        <Button
+          type="submit"
+          size="icon"
+          variant="ghost"
+          disabled={mutePending}
+          aria-label={
+            account.alertsMuted
+              ? `Reativar alerta de status de ${account.label}`
+              : `Silenciar alerta de status de ${account.label}`
+          }
+          title={
+            muteState.error ??
+            (account.alertsMuted
+              ? "Alerta de status desativada silenciado — clique pra reativar"
+              : "Silenciar alerta de status desativada pra esta conta")
+          }
+        >
+          {account.alertsMuted ? (
+            <BellOff className="size-4 text-muted-foreground" />
+          ) : (
+            <Bell className="size-4" />
+          )}
+        </Button>
+      </form>
 
       <form action={action}>
         <input type="hidden" name="id" value={account.id} />

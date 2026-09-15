@@ -62,6 +62,8 @@ export type AdAccount = {
   ads_token: string | null;
   /** Moeda da conta na Meta (ex.: "BRL", "USD") — sem conversão, só rótulo. */
   currency: string | null;
+  /** Silencia o alerta de WhatsApp de "conta desativada" pra esta conta. */
+  alerts_muted: boolean;
 };
 
 export function toYmd(date: Date): string {
@@ -103,7 +105,7 @@ export async function getAdAccounts(areaId: string): Promise<AdAccount[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("meta_ad_accounts")
-    .select("id, label, ad_account_id, ads_token, currency")
+    .select("id, label, ad_account_id, ads_token, currency, alerts_muted")
     .eq("area_id", areaId);
 
   if (error || !data) return [];

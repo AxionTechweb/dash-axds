@@ -58,7 +58,7 @@ export default async function IntegracoesPage() {
   ] = await Promise.all([
     supabase
       .from("meta_ad_accounts")
-      .select("id, label, ad_account_id, ads_token")
+      .select("id, label, ad_account_id, ads_token, alerts_muted")
       .eq("area_id", activeArea.id)
       .order("created_at", { ascending: true }),
     supabase
@@ -108,6 +108,7 @@ export default async function IntegracoesPage() {
     ad_account_id: row.ad_account_id as string,
     // Nunca expomos o ciphertext: só se existe ou não.
     hasToken: Boolean(row.ads_token),
+    alertsMuted: Boolean(row.alerts_muted),
   }));
 
   const publicToken = (areaRow?.public_token as string) ?? "";

@@ -407,6 +407,36 @@ export async function deleteAdAccount(
   return { ok: "Conta removida." };
 }
 
+/**
+ * Liga/desliga o alerta de WhatsApp de "conta desativada" pra UMA conta —
+ * útil quando `account_status` da Meta fica piscando numa conta já
+ * desativada há tempo e o aviso vira ruído em vez de novidade.
+ */
+export async function toggleAccountAlertMute(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const id = String(formData.get("id") ?? "");
+  const muted = formData.get("muted") === "true";
+  if (!id) return { error: "Conta não informada." };
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("meta_ad_accounts")
+    .update({ alerts_muted: muted })
+    .eq("id", id)
+    .eq("area_id", ctx.area.id);
+  if (error) return { error: `Falha ao salvar: ${error.message}` };
+
+  await audit(ctx.area.id, ctx.user.email, "config.meta_account_mute", { id, muted });
+
+  revalidatePath("/integracoes");
+  return { ok: muted ? "Alerta de status silenciado." : "Alerta de status reativado." };
+}
+
 /* ------------------------------------------------- Vturb: players monitorados */
 
 /** Estado do fluxo "colar API key → listar vídeos → escolher". */
