@@ -105,6 +105,98 @@ export async function umblerGet<T>(
   }
 }
 
+/**
+ * POST autenticado, com `organizationId` sempre incluído no corpo (diferente
+ * do GET, que leva na query string — confirmado contra a doc real: o schema
+ * de `POST /v1/messages/` exige `OrganizationId` como campo do body, não
+ * query param). Nunca lança.
+ */
+export async function umblerPost<T>(
+  integration: { areaId: string; apiToken: string; organizationId: string },
+  path: string,
+  body: Record<string, unknown>,
+): Promise<UmblerFetchResult<T>> {
+  const allowed = await waitForRateLimit(integration.areaId);
+  if (!allowed) return { data: null, error: "rate limit interno atingido" };
+
+  try {
+    const response = await fetch(`${UMBLER_API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${integration.apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ OrganizationId: integration.organizationId, ...body }),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const responseBody = (await response.json().catch(() => null)) as {
+        message?: string;
+        title?: string;
+      } | null;
+      return {
+        data: null,
+        error: responseBody?.message ?? responseBody?.title ?? `HTTP ${response.status}`,
+      };
+    }
+
+    const data = (await response.json().catch(() => null)) as T;
+    return { data, error: null };
+  } catch (err) {
+    return {
+      data: null,
+      error: err instanceof Error ? err.message : "falha na requisição",
+    };
+  }
+}
+
+/**
+ * Envia uma mensagem de texto livre num chat existente — mesmo endpoint que
+ * um atendente humano usa, então a resposta da IA fica indistinguível de uma
+ * resposta manual no app da Umbler. Validado: `POST /v1/messages/` aceita
+ * `{OrganizationId, ChatId, Message}` como JSON.
+ */
+export async function sendUmblerMessage(
+  integration: UmblerIntegration,
+  chatId: string,
+  text: string,
+): Promise<{ ok: boolean; error: string | null }> {
+  const result = await umblerPost(integration, "/v1/messages/", {
+    ChatId: chatId,
+    Message: text,
+  });
+  return { ok: result.error === null, error: result.error };
+}
+
+export type RegisterUmblerWebhookResult =
+  | { ok: true; webhookId: string }
+  | { ok: false; error: string };
+
+/**
+ * Registra nossa URL pra receber eventos de mensagem em tempo real — chamado
+ * uma vez por área (não é um cron). Validado contra a doc real:
+ * `POST /v1/webhooks/` aceita `{name, url, forChannels, events}`, e
+ * `EventWebhookType` inclui `"Message"`.
+ */
+export async function registerUmblerWebhook(
+  integration: UmblerIntegration,
+  callbackUrl: string,
+  channelId: string,
+): Promise<RegisterUmblerWebhookResult> {
+  const result = await umblerPost<{ id?: string }>(integration, "/v1/webhooks/", {
+    name: "dash-sg — agente de suporte",
+    url: callbackUrl,
+    forChannels: [channelId],
+    events: ["Message"],
+  });
+
+  if (result.error || !result.data?.id) {
+    return { ok: false, error: result.error ?? "resposta sem id do webhook" };
+  }
+  return { ok: true, webhookId: result.data.id };
+}
+
 export type UmblerOrganization = { id: string; name: string };
 
 export type DiscoverUmblerResult =
