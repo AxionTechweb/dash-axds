@@ -97,7 +97,7 @@ type AlertDedupState = { consecutiveOkChecks?: number };
  * normal (que pode ser só uma piscada). Devolve `true` quando deve notificar
  * agora; quem chama decide a mensagem e chama `notifyArea`.
  */
-async function shouldNotifyOnce(
+export async function shouldNotifyOnce(
   admin: ReturnType<typeof createAdminClient>,
   areaId: string,
   alertType: string,

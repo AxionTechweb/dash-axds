@@ -1,5 +1,7 @@
 import "server-only";
 
+import { shouldNotifyOnce } from "@/lib/alerts";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getUmblerIntegration, sendUmblerMessage } from "@/lib/umbler/client";
 import { notifyArea } from "@/lib/whatsapp/client";
 
@@ -20,6 +22,12 @@ import {
 // Limite de idas-e-voltas de ferramenta por mensagem — evita loop infinito se
 // o modelo insistir em chamar ferramentas sem nunca concluir.
 const MAX_TOOL_LOOPS = 4;
+
+// Mesmo dedup usado nos outros alertas (src/lib/alerts.ts) — sem isso, uma
+// instabilidade/cota do Gemini manda um aviso pro grupo a CADA mensagem de
+// cliente que falha, em vez de uma vez só por episódio.
+const GEMINI_FAILURE_ALERT = "support_ai_gemini_failure";
+const LOOP_EXHAUSTED_ALERT = "support_ai_loop_exhausted";
 
 async function runTool(
   areaId: string,
@@ -72,6 +80,7 @@ export async function handleInboundMessage(
   }
 
   const contents: GeminiContent[] = [{ role: "user", parts: [{ text }] }];
+  const admin = createAdminClient();
 
   for (let loop = 0; loop < MAX_TOOL_LOOPS; loop += 1) {
     const result = await generateContent(SUPPORT_SYSTEM_PROMPT, contents, SUPPORT_TOOLS);
@@ -79,12 +88,18 @@ export async function handleInboundMessage(
     if (!result.ok) {
       console.error(`[support] falha no Gemini (área ${areaId}, chat ${chatId}):`, result.error);
       await escalateToHuman(areaId, chatId, { reason: "Falha técnica ao processar mensagem." });
-      await notifyArea(
-        areaId,
-        `🤖 A IA de suporte falhou (erro técnico) e passou a conversa pra humano. Chat: ${chatId}`,
-      );
+      if (await shouldNotifyOnce(admin, areaId, GEMINI_FAILURE_ALERT, true)) {
+        await notifyArea(
+          areaId,
+          `🤖 A IA de suporte está falhando (erro técnico no Gemini) e as conversas estão sendo passadas pra humano automaticamente até normalizar.\nÚltimo erro: ${result.error}`,
+        );
+      }
       return;
     }
+
+    // Gemini respondeu com sucesso — conta como "ok" pra eventualmente rearmar
+    // o alerta acima, caso tenha disparado antes.
+    await shouldNotifyOnce(admin, areaId, GEMINI_FAILURE_ALERT, false);
 
     contents.push(result.content);
 
@@ -93,6 +108,7 @@ export async function handleInboundMessage(
     if (!functionCallPart) {
       const answer = result.content.parts.find(isTextPart)?.text?.trim();
       if (answer) await sendUmblerMessage(integration, chatId, answer);
+      await shouldNotifyOnce(admin, areaId, LOOP_EXHAUSTED_ALERT, false);
       return;
     }
 
@@ -101,6 +117,7 @@ export async function handleInboundMessage(
 
     if (name === "escalate_to_human") {
       // Humano assume a partir daqui — a IA não continua a conversa.
+      await shouldNotifyOnce(admin, areaId, LOOP_EXHAUSTED_ALERT, false);
       return;
     }
 
@@ -113,8 +130,10 @@ export async function handleInboundMessage(
   // Excedeu o limite de loops sem concluir — escalona por segurança em vez de
   // deixar o cliente sem resposta.
   await escalateToHuman(areaId, chatId, { reason: "IA não conseguiu concluir a resposta." });
-  await notifyArea(
-    areaId,
-    `🤖 A IA de suporte não conseguiu concluir uma resposta e passou a conversa pra humano. Chat: ${chatId}`,
-  );
+  if (await shouldNotifyOnce(admin, areaId, LOOP_EXHAUSTED_ALERT, true)) {
+    await notifyArea(
+      areaId,
+      `🤖 A IA de suporte não está conseguindo concluir respostas (loop de ferramentas sem parar) e as conversas estão sendo passadas pra humano.`,
+    );
+  }
 }
