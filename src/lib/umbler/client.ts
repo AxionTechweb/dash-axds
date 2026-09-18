@@ -169,33 +169,14 @@ export async function sendUmblerMessage(
   return { ok: result.error === null, error: result.error };
 }
 
-export type RegisterUmblerWebhookResult =
-  | { ok: true; webhookId: string }
-  | { ok: false; error: string };
-
 /**
- * Registra nossa URL pra receber eventos de mensagem em tempo real — chamado
- * uma vez por área (não é um cron). Validado contra a doc real:
- * `POST /v1/webhooks/` aceita `{name, url, forChannels, events}`, e
- * `EventWebhookType` inclui `"Message"`.
+ * NÃO existe registro de webhook por API — testado contra `POST /v1/webhooks/`
+ * (mesmo schema documentado, `{name, url, channelIds, events}`) e a Umbler
+ * devolve 400 com `{"request":["This action can only be performed from
+ * within the UI"]}`. O cadastro do webhook (URL, evento "Message", canal)
+ * precisa ser feito manualmente no painel web da Umbler Talk — não há como
+ * automatizar esse passo específico.
  */
-export async function registerUmblerWebhook(
-  integration: UmblerIntegration,
-  callbackUrl: string,
-  channelId: string,
-): Promise<RegisterUmblerWebhookResult> {
-  const result = await umblerPost<{ id?: string }>(integration, "/v1/webhooks/", {
-    name: "dash-sg — agente de suporte",
-    url: callbackUrl,
-    forChannels: [channelId],
-    events: ["Message"],
-  });
-
-  if (result.error || !result.data?.id) {
-    return { ok: false, error: result.error ?? "resposta sem id do webhook" };
-  }
-  return { ok: true, webhookId: result.data.id };
-}
 
 export type UmblerOrganization = { id: string; name: string };
 
