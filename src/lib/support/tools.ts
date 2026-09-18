@@ -1,5 +1,6 @@
 import "server-only";
 
+import { checkAccess } from "@/lib/lovable/client";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import type { GeminiTool } from "./gemini";
@@ -40,6 +41,21 @@ export const SUPPORT_TOOLS: GeminiTool[] = [
         },
       },
       required: ["phone"],
+    },
+  },
+  {
+    name: "lookup_access_status",
+    description:
+      "Verifica se um e-mail tem acesso ativo à plataforma do Programa Active. Use quando o cliente disser que está sem acesso, não consegue entrar/logar, ou perguntar se o acesso já foi liberado. Telefone do WhatsApp NÃO serve aqui — se ainda não tiver o e-mail do cliente na conversa, peça antes de chamar essa ferramenta.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        email: {
+          type: "STRING",
+          description: "E-mail do cliente cadastrado na plataforma.",
+        },
+      },
+      required: ["email"],
     },
   },
   {
@@ -87,6 +103,16 @@ export async function lookupPurchaseStatus(
     valor: match.valor,
     data_compra: match.created_at,
   };
+}
+
+export async function lookupAccessStatus(args: { email?: string }): Promise<Record<string, unknown>> {
+  const email = args.email?.trim();
+  if (!email) return { error: "e-mail inválido" };
+
+  const result = await checkAccess(email);
+  if ("error" in result) return { error: result.error };
+  if (!result.found) return { found: false };
+  return { found: true, has_access: result.hasAccess, email: result.email };
 }
 
 export async function escalateToHuman(

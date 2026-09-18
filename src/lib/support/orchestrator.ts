@@ -10,7 +10,12 @@ import {
   type GeminiContent,
 } from "./gemini";
 import { SUPPORT_SYSTEM_PROMPT } from "./prompt";
-import { escalateToHuman, lookupPurchaseStatus, SUPPORT_TOOLS } from "./tools";
+import {
+  escalateToHuman,
+  lookupAccessStatus,
+  lookupPurchaseStatus,
+  SUPPORT_TOOLS,
+} from "./tools";
 
 // Limite de idas-e-voltas de ferramenta por mensagem — evita loop infinito se
 // o modelo insistir em chamar ferramentas sem nunca concluir.
@@ -25,6 +30,10 @@ async function runTool(
 ): Promise<Record<string, unknown>> {
   if (name === "lookup_purchase_status") {
     return lookupPurchaseStatus(areaId, args as { phone?: string });
+  }
+
+  if (name === "lookup_access_status") {
+    return lookupAccessStatus(args as { email?: string });
   }
 
   if (name === "escalate_to_human") {
