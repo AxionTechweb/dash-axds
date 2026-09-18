@@ -12,7 +12,9 @@ import { json } from "@/lib/capture";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const headers = Object.fromEntries(request.headers.entries());
   const body = await request.text();
+  console.log("[umbler-inbound] headers recebidos:", JSON.stringify(headers));
   console.log("[umbler-inbound] payload recebido:", body);
   return json({ ok: true }, 200);
 }
