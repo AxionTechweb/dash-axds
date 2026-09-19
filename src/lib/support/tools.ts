@@ -1,6 +1,6 @@
 import "server-only";
 
-import { checkAccess } from "@/lib/lovable/client";
+import { checkAccess, grantAccess } from "@/lib/lovable/client";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import type { GeminiTool } from "./gemini";
@@ -31,16 +31,10 @@ export const SUPPORT_TOOLS: GeminiTool[] = [
   {
     name: "lookup_purchase_status",
     description:
-      "Consulta a compra mais recente de um cliente pelo telefone de contato do WhatsApp. Use sempre que o cliente perguntar sobre status de pedido, pagamento, acesso ou reembolso — nunca invente um status sem chamar essa ferramenta.",
+      "Consulta a compra mais recente do cliente. Já usa automaticamente o telefone do WhatsApp de onde ele está falando — NÃO peça o telefone ao cliente, você já sabe qual é. Use sempre que o cliente perguntar sobre status de pedido, pagamento, acesso ou reembolso — nunca invente um status sem chamar essa ferramenta.",
     parameters: {
       type: "OBJECT",
-      properties: {
-        phone: {
-          type: "STRING",
-          description: "Telefone do cliente, em qualquer formato (com ou sem DDI/DDD).",
-        },
-      },
-      required: ["phone"],
+      properties: {},
     },
   },
   {
@@ -53,6 +47,21 @@ export const SUPPORT_TOOLS: GeminiTool[] = [
         email: {
           type: "STRING",
           description: "E-mail do cliente cadastrado na plataforma.",
+        },
+      },
+      required: ["email"],
+    },
+  },
+  {
+    name: "grant_access",
+    description:
+      "Concede acesso à plataforma pra um cliente que pagou mas está sem acesso. SÓ chame depois de confirmar com lookup_purchase_status que existe uma compra aprovada — esta ferramenta confere isso de novo sozinha e recusa se não achar uma compra aprovada, então não adianta chamar sem verificar antes. Use quando lookup_access_status mostrar has_access false para um cliente com pagamento aprovado.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        email: {
+          type: "STRING",
+          description: "E-mail do cliente cadastrado na plataforma, o mesmo já usado em lookup_access_status.",
         },
       },
       required: ["email"],
@@ -77,10 +86,10 @@ export const SUPPORT_TOOLS: GeminiTool[] = [
 
 export async function lookupPurchaseStatus(
   areaId: string,
-  args: { phone?: string },
+  contactPhone: string | null,
 ): Promise<Record<string, unknown>> {
-  const digits = phoneDigits(args.phone);
-  if (!digits) return { found: false, error: "telefone inválido" };
+  const digits = phoneDigits(contactPhone);
+  if (!digits) return { found: false, error: "telefone do contato inválido" };
 
   const admin = createAdminClient();
   const { data } = await admin
@@ -113,6 +122,75 @@ export async function lookupAccessStatus(args: { email?: string }): Promise<Reco
   if ("error" in result) return { error: result.error };
   if (!result.found) return { found: false };
   return { found: true, has_access: result.hasAccess, email: result.email };
+}
+
+/**
+ * Confere DE NOVO, no código, se existe compra aprovada pro telefone/e-mail —
+ * usada por grant_access pra nunca depender só da IA ter "achado" que viu uma
+ * compra aprovada numa chamada anterior. Casa por telefone OU e-mail: o
+ * telefone vem do contato do WhatsApp (mais confiável), o e-mail é o que o
+ * cliente informou na conversa.
+ */
+async function findApprovedPurchase(
+  areaId: string,
+  { phone, email }: { phone?: string | null; email?: string | null },
+): Promise<{ produto: string; created_at: string } | null> {
+  const digits = phoneDigits(phone);
+  const emailNorm = email?.trim().toLowerCase() || null;
+  if (!digits && !emailNorm) return null;
+
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("purchases")
+    .select("produto, created_at, telefone, email")
+    .eq("area_id", areaId)
+    .eq("status", "approved")
+    .order("created_at", { ascending: false })
+    .limit(5000);
+
+  const match = (data ?? []).find((row) => {
+    if (digits && phoneDigits(row.telefone as string | null) === digits) return true;
+    if (emailNorm && (row.email as string | null)?.trim().toLowerCase() === emailNorm) return true;
+    return false;
+  });
+
+  return match ? { produto: match.produto as string, created_at: match.created_at as string } : null;
+}
+
+export async function grantAccessTool(
+  areaId: string,
+  contactPhone: string | null,
+  args: { email?: string },
+): Promise<Record<string, unknown>> {
+  const email = args.email?.trim();
+  if (!email) return { granted: false, reason: "e-mail inválido" };
+
+  const purchase = await findApprovedPurchase(areaId, { phone: contactPhone, email });
+  if (!purchase) {
+    return {
+      granted: false,
+      reason: "nenhuma compra aprovada encontrada pra esse telefone/e-mail — não é seguro conceder acesso",
+    };
+  }
+
+  const result = await grantAccess(email);
+  if (!result.ok) return { granted: false, reason: result.error };
+
+  const admin = createAdminClient();
+  await admin.from("audit_log").insert({
+    area_id: areaId,
+    actor_email: null,
+    action: "support_ai_grant_access",
+    target_type: "lovable_access",
+    details: {
+      email,
+      contact_phone: contactPhone,
+      matched_purchase: purchase,
+      already_had_access: result.alreadyHadAccess,
+    },
+  });
+
+  return { granted: true, already_had_access: result.alreadyHadAccess };
 }
 
 export async function escalateToHuman(

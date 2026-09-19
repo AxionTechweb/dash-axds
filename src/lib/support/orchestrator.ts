@@ -14,14 +14,17 @@ import {
 import { SUPPORT_SYSTEM_PROMPT } from "./prompt";
 import {
   escalateToHuman,
+  grantAccessTool,
   lookupAccessStatus,
   lookupPurchaseStatus,
   SUPPORT_TOOLS,
 } from "./tools";
 
 // Limite de idas-e-voltas de ferramenta por mensagem — evita loop infinito se
-// o modelo insistir em chamar ferramentas sem nunca concluir.
-const MAX_TOOL_LOOPS = 4;
+// o modelo insistir em chamar ferramentas sem nunca concluir. O fluxo de
+// concessão de acesso sozinho já usa 3 (lookup_access_status →
+// lookup_purchase_status → grant_access), por isso a margem.
+const MAX_TOOL_LOOPS = 6;
 
 // Mesmo dedup usado nos outros alertas (src/lib/alerts.ts) — sem isso, uma
 // instabilidade/cota do Gemini manda um aviso pro grupo a CADA mensagem de
@@ -37,11 +40,15 @@ async function runTool(
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   if (name === "lookup_purchase_status") {
-    return lookupPurchaseStatus(areaId, args as { phone?: string });
+    return lookupPurchaseStatus(areaId, contactPhone);
   }
 
   if (name === "lookup_access_status") {
     return lookupAccessStatus(args as { email?: string });
+  }
+
+  if (name === "grant_access") {
+    return grantAccessTool(areaId, contactPhone, args as { email?: string });
   }
 
   if (name === "escalate_to_human") {
