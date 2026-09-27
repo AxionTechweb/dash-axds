@@ -18,10 +18,10 @@ export type Branding = {
 };
 
 export const DEFAULT_BRANDING: Branding = {
-  product_name: "Dashboard",
-  logo_light_url: null,
-  logo_dark_url: null,
-  favicon_url: null,
+  product_name: "Axion",
+  logo_light_url: "/brand/logo.png",
+  logo_dark_url: "/brand/logo.png",
+  favicon_url: "/brand/logo.png",
   primary_color_override: null,
 };
 

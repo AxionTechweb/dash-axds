@@ -1,20 +1,29 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono, Oswald, Plus_Jakarta_Sans } from "next/font/google";
+import { Anton, Cinzel, Inter, JetBrains_Mono } from "next/font/google";
 
 import { getBranding } from "@/lib/branding";
 
 import "./globals.css";
 
-/** Corpo do texto — a fonte do design de referência. */
-const jakarta = Plus_Jakarta_Sans({
-  variable: "--font-jakarta",
+/** Tipografia sans moderna e ultra legível — Inter (Axion). */
+const inter = Inter({
+  variable: "--font-sans",
   subsets: ["latin"],
   display: "swap",
 });
 
-/** Títulos display: caixa-alta, condensada, bem apertada. */
-const oswald = Oswald({
-  variable: "--font-oswald",
+/** Títulos display bold e condensados de impacto — Anton (identidade visual dos anúncios Axion). */
+const display = Anton({
+  variable: "--font-display",
+  weight: "400",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+/** Serifa premium de inspiração clássica — Cinzel (Axion). */
+const myth = Cinzel({
+  variable: "--font-myth",
+  weight: ["500", "600", "700"],
   subsets: ["latin"],
   display: "swap",
 });
@@ -47,9 +56,9 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-/** Cor da barra de status/moldura do navegador ao instalar — mesmo tom do tema escuro padrão. */
+/** Cor da barra de status/moldura do navegador ao instalar — preto absoluto da Axion. */
 export const viewport: Viewport = {
-  themeColor: "#030303",
+  themeColor: "#000000",
   colorScheme: "dark",
 };
 
@@ -77,7 +86,7 @@ export default async function RootLayout({
       lang="pt-BR"
       data-theme="dark"
       style={primaryOverride}
-      className={`${jakarta.variable} ${oswald.variable} ${jetbrainsMono.variable} h-full`}
+      className={`${inter.variable} ${display.variable} ${myth.variable} ${jetbrainsMono.variable} h-full`}
       suppressHydrationWarning
     >
       <head>

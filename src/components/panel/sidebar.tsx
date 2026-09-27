@@ -46,16 +46,18 @@ function NavTile({
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "list-tile group/item flex items-center gap-3 p-2",
-        active && "border-border bg-[hsl(var(--foreground)/0.04)]",
+        "list-tile group/item flex items-center gap-3 p-2 transition-all duration-200",
+        active
+          ? "border-[rgba(212,175,55,0.3)] bg-[rgba(212,175,55,0.06)] shadow-[0_0_20px_-5px_rgba(212,175,55,0.15)]"
+          : "hover:border-[rgba(212,175,55,0.2)] hover:bg-[rgba(212,175,55,0.03)]",
       )}
     >
       <span
         className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-lg border transition-all",
+          "flex size-9 shrink-0 items-center justify-center rounded-lg border transition-all duration-200",
           active
-            ? "border-[hsl(var(--primary)/0.25)] bg-[hsl(var(--primary)/0.1)] text-primary"
-            : "border-border bg-[hsl(var(--muted)/0.6)] text-muted-foreground group-hover/item:border-[hsl(var(--primary)/0.2)] group-hover/item:text-primary",
+            ? "border-[rgba(212,175,55,0.45)] bg-gradient-to-b from-[rgba(245,197,24,0.2)] to-[rgba(212,175,55,0.08)] text-[hsl(var(--gold-light))] shadow-[0_0_12px_rgba(212,175,55,0.25)]"
+            : "border-border bg-[hsl(var(--muted)/0.6)] text-muted-foreground group-hover/item:border-[rgba(212,175,55,0.3)] group-hover/item:text-[hsl(var(--gold-light))]",
         )}
       >
         <Icon className="size-4" />

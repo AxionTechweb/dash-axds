@@ -14,7 +14,7 @@ const METHOD_COLORS: Record<string, string> = {
   Cartão: "hsl(var(--primary))",
   PIX: "hsl(var(--accent-emerald))",
   Boleto: "hsl(var(--accent-amber))",
-  PayPal: "hsl(var(--accent-purple))",
+  PayPal: "hsl(var(--accent-azure))",
 };
 const FALLBACK_COLOR = "hsl(var(--muted-foreground))";
 

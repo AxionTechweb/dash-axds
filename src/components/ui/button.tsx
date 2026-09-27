@@ -21,21 +21,21 @@ type Variant =
 type Size = "sm" | "md" | "lg" | "icon";
 
 const VARIANTS: Record<Variant, string> = {
-  /** Ação principal: sólida na cor da marca, com halo suave. */
+  /** Ação principal: gradiente de ouro metálico Axion com halo e leve press effect. */
   primary:
-    "bg-primary text-primary-foreground font-semibold hover:brightness-110 shadow-[0_0_20px_-6px_hsl(var(--primary)/0.7)]",
-  /** CTA de alto contraste (branco/preto) — o botão-herói da referência. */
+    "bg-gradient-to-b from-[hsl(var(--gold-light))] to-[hsl(var(--gold))] text-black font-semibold hover:brightness-110 active:scale-[0.98] shadow-[0_0_24px_-4px_rgba(212,175,55,0.55)]",
+  /** CTA de alto contraste (pergaminho/preto absoluto). */
   contrast:
-    "bg-foreground text-background font-semibold hover:opacity-90 shadow-[0_0_30px_-10px_hsl(var(--foreground)/0.5)]",
-  /** Tintada: fundo 10% + borda 20% da cor de acento. */
+    "bg-[#f3f1ec] text-[#000000] font-semibold hover:bg-white active:scale-[0.98] shadow-[0_0_30px_-10px_rgba(243,241,236,0.4)]",
+  /** Tintada com ouro metálico da Axion. */
   accent:
-    "bg-[hsl(var(--primary)/0.1)] border border-[hsl(var(--primary)/0.2)] text-primary hover:bg-[hsl(var(--primary)/0.15)]",
+    "bg-[rgba(212,175,55,0.12)] border border-[rgba(212,175,55,0.3)] text-[hsl(var(--gold-light))] hover:bg-[rgba(212,175,55,0.2)] hover:border-[rgba(212,175,55,0.5)] active:scale-[0.98]",
   secondary:
-    "bg-muted text-foreground border border-border hover:bg-[hsl(var(--foreground)/0.06)]",
+    "bg-muted text-foreground border border-border hover:border-[rgba(212,175,55,0.3)] hover:bg-[rgba(212,175,55,0.05)]",
   ghost:
-    "text-muted-foreground hover:bg-[hsl(var(--foreground)/0.05)] hover:text-foreground",
+    "text-muted-foreground hover:bg-[rgba(212,175,55,0.08)] hover:text-foreground",
   outline:
-    "border border-border bg-transparent hover:bg-[hsl(var(--foreground)/0.04)]",
+    "border border-border bg-transparent hover:border-[rgba(212,175,55,0.35)] hover:bg-[rgba(212,175,55,0.06)]",
   destructive:
     "bg-[hsl(var(--destructive)/0.12)] border border-[hsl(var(--destructive)/0.25)] text-destructive hover:bg-[hsl(var(--destructive)/0.2)]",
 };
@@ -106,8 +106,8 @@ export function PillItem({
       className={cn(
         "rounded-full px-4 py-1.5 text-xs font-medium transition-all",
         active
-          ? "bg-[hsl(var(--foreground)/0.1)] text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground",
+          ? "bg-gradient-to-b from-[hsl(var(--gold-light))] to-[hsl(var(--gold))] text-black font-semibold shadow-[0_0_15px_-3px_rgba(212,175,55,0.4)]"
+          : "text-muted-foreground hover:text-foreground hover:bg-[rgba(212,175,55,0.06)]",
         className,
       )}
       {...props}

@@ -24,7 +24,7 @@ import type { DailyPoint } from "@/lib/metrics";
  * sem nada de marca preso no código.
  */
 const COLOR_REVENUE = "hsl(var(--primary))";
-const COLOR_SPEND = "hsl(var(--accent-purple))";
+const COLOR_SPEND = "hsl(var(--accent-azure))";
 
 function shortDate(value: string): string {
   const [, month, day] = value.split("-");

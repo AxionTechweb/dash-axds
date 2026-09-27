@@ -1,85 +1,95 @@
 @import "tailwindcss";
 
 /* =============================================================================
-   Design system — referência "Finex" (tema escuro nativo).
-   Preto profundo (#020202), superfícies quase pretas, bordas em branco de baixa
-   opacidade, acento ciano, tipografia Plus Jakarta Sans + Oswald (display) e
-   rótulos em mono caixa-alta.
+   Design system — Identidade Visual Axion (referência axion-quiz).
+   Preto absoluto (#000000), superfícies navy quente (#0A0908 / #141210 / #211C15),
+   dourado metálico (#D4AF37 / #F5C518), azul de dados/tech (#2F8FD1),
+   pergaminho (#F3F1EC), pedra suave (#948C7A) e tipografia Anton + Inter + Cinzel.
 
    Cores em HSL via variáveis CSS (formato "H S% L%", sem a função hsl()).
    A troca de tema é feita pelo atributo data-theme no <html>.
-   A cor primária pode ser sobrescrita pelo branding da instância (white label)
-   injetando --primary inline no <html> — os defaults aqui são neutros.
    ============================================================================= */
 
 :root,
 :root[data-theme="dark"] {
-  /* Fundo #020202 e superfícies #050505 / #0A0A0A da referência */
-  --background: 0 0% 1%;
-  --foreground: 0 0% 100%;
+  /* Fundo preto absoluto e superfícies navy da Axion */
+  --background: 0 0% 0%;
+  --foreground: 43 20% 94%; /* parch #f3f1ec */
 
-  --card: 0 0% 4%;
-  --card-foreground: 0 0% 100%;
+  --card: 30 11% 4%; /* navy-800 #0a0908 */
+  --card-foreground: 43 20% 94%;
 
-  /* zinc-900 / zinc-400 */
-  --muted: 240 6% 10%;
-  --muted-foreground: 240 5% 65%;
+  /* navy-700 / muted #948c7a */
+  --muted: 30 11% 8%;
+  --muted-foreground: 42 10% 55%;
 
-  /* Equivalentes opacos de white/10 e white/14 sobre o fundo preto */
-  --border: 0 0% 11%;
-  --input: 0 0% 14%;
-  --ring: 187 92% 53%;
+  /* Bordas em tom escuro quente / ouro sutil */
+  --border: 35 12% 14%;
+  --input: 35 12% 18%;
+  --ring: 46 65% 52%;
 
-  /* Primária: ciano (cyan-400 #22d3ee) — sobrescritível pelo branding */
-  --primary: 187 92% 53%;
-  --primary-foreground: 0 0% 4%;
+  /* Primária: Dourado metálico da Axion (#d4af37) */
+  --primary: 46 65% 52%;
+  --primary-foreground: 0 0% 0%;
 
-  --accent-cyan: 187 92% 53%;
-  --accent-purple: 271 91% 65%;
-  --accent-emerald: 160 84% 39%;
-  --accent-amber: 38 92% 58%;
-  --destructive: 0 84% 60%;
+  /* Ouro metálico Axion */
+  --gold: 46 65% 52%;
+  --gold-light: 47 92% 53%;
+  --gold-dark: 43 72% 31%;
 
-  /* Cantos: a referência mistura 2xl nos cards e xl nos itens de lista */
+  /* Tech/Data azure e acentos */
+  --accent-cyan: 204 65% 50%; /* azure #2f8fd1 tech/dados */
+  --accent-azure: 204 65% 50%;
+  --accent-purple: 46 65% 52%;
+  --accent-emerald: 158 75% 42%;
+  --accent-amber: 47 92% 53%;
+  --destructive: 4 72% 56%; /* alert #e0483e */
+
+  /* Cantos */
   --radius: 0.75rem;
 
-  /* Camada dos cartões: zinc-900/40 + backdrop-blur */
-  --glass-bg: 240 6% 10%;
-  --glass-opacity: 0.4;
+  /* Camada dos cartões: navy profundo com blur e reflexo ouro */
+  --glass-bg: 30 11% 4%;
+  --glass-opacity: 0.75;
 
   /* Traços decorativos */
-  --hairline: 255 255 255;
+  --hairline: 212 175 55;
   --stripe-alpha: 0.015;
 }
 
 :root[data-theme="light"] {
-  --background: 0 0% 98%;
-  --foreground: 240 10% 4%;
+  --background: 43 20% 98%;
+  --foreground: 30 11% 6%;
 
   --card: 0 0% 100%;
-  --card-foreground: 240 10% 4%;
+  --card-foreground: 30 11% 6%;
 
-  --muted: 240 5% 96%;
-  --muted-foreground: 240 4% 46%;
+  --muted: 40 15% 94%;
+  --muted-foreground: 42 10% 40%;
 
-  --border: 240 6% 90%;
-  --input: 240 6% 88%;
-  --ring: 189 94% 33%;
+  --border: 40 15% 88%;
+  --input: 40 15% 86%;
+  --ring: 43 72% 38%;
 
-  /* Ciano escurecido para contraste em fundo claro */
-  --primary: 189 94% 33%;
+  /* Dourado escuro com bom contraste para fundo claro */
+  --primary: 43 72% 38%;
   --primary-foreground: 0 0% 100%;
 
-  --accent-cyan: 189 94% 33%;
-  --accent-purple: 271 70% 48%;
-  --accent-emerald: 160 84% 28%;
-  --accent-amber: 32 90% 40%;
-  --destructive: 0 72% 45%;
+  --gold: 43 72% 38%;
+  --gold-light: 46 65% 52%;
+  --gold-dark: 43 72% 26%;
+
+  --accent-cyan: 204 75% 40%;
+  --accent-azure: 204 75% 40%;
+  --accent-purple: 43 72% 38%;
+  --accent-emerald: 158 75% 32%;
+  --accent-amber: 40 85% 42%;
+  --destructive: 4 72% 46%;
 
   --glass-bg: 0 0% 100%;
-  --glass-opacity: 0.85;
+  --glass-opacity: 0.88;
 
-  --hairline: 0 0 0;
+  --hairline: 138 106 22;
   --stripe-alpha: 0.02;
 }
 
@@ -96,11 +106,16 @@
   --color-ring: hsl(var(--ring));
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-gold: hsl(var(--gold));
+  --color-gold-light: hsl(var(--gold-light));
+  --color-gold-dark: hsl(var(--gold-dark));
+  --color-azure: hsl(var(--accent-azure));
   --color-cyan: hsl(var(--accent-cyan));
   --color-purple: hsl(var(--accent-purple));
   --color-emerald: hsl(var(--accent-emerald));
   --color-amber: hsl(var(--accent-amber));
   --color-destructive: hsl(var(--destructive));
+  --color-parch: hsl(var(--foreground));
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
@@ -108,8 +123,9 @@
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
 
-  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-oswald), var(--font-jakarta), sans-serif;
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), ui-sans-serif, sans-serif;
+  --font-myth: var(--font-myth), serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 }
 
@@ -133,7 +149,7 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Glows ambientes: ciano no topo, roxo embaixo à direita (assinatura Finex) */
+  /* Glows ambientes: ouro metálico no topo, azul tech nos cantos (assinatura Axion) */
   body::before {
     content: "";
     position: fixed;
@@ -142,18 +158,18 @@
     pointer-events: none;
     background:
       radial-gradient(
-        50rem 32rem at 50% -8%,
-        hsl(var(--accent-cyan) / 0.06),
-        transparent 70%
+        55rem 35rem at 50% -10%,
+        rgba(212, 175, 55, 0.12),
+        transparent 65%
       ),
       radial-gradient(
-        40rem 26rem at 100% 100%,
-        hsl(var(--accent-purple) / 0.05),
-        transparent 70%
+        45rem 30rem at 100% 100%,
+        rgba(47, 143, 209, 0.08),
+        transparent 65%
       );
   }
 
-  /* Padrão diagonal sutil (.bg-stripes da referência), global e fixo */
+  /* Padrão diagonal sutil (.bg-stripes), global e fixo */
   body::after {
     content: "";
     position: fixed;
@@ -177,41 +193,113 @@
   }
 
   ::selection {
-    background: hsl(var(--accent-purple) / 0.3);
+    background: rgba(212, 175, 55, 0.35);
+    color: #ffffff;
+  }
+}
+
+/* =============================================================================
+   Animações e Micro-interações da Identidade Axion
+   ============================================================================= */
+
+@keyframes pop {
+  0% {
+    box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.55);
+  }
+  40% {
+    transform: scale(1.02);
+    box-shadow: 0 0 0 8px rgba(212, 175, 55, 0.18);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(212, 175, 55, 0);
+  }
+}
+
+@keyframes stepIn {
+  from {
+    opacity: 0;
+    transform: translateX(18px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes rankStamp {
+  from {
+    opacity: 0;
+    transform: scale(1.1);
+    filter: blur(4px);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
   }
 }
 
 @layer components {
   /* ---------------------------------------------------------------------------
-     Cartão base. Na referência: bg-zinc-900/40 + backdrop-blur + border-white/5
-     + rounded-2xl, com a borda ganhando cor no hover.
+     Cartão base Axion: superfície navy profundo, blur e bordas com hover em ouro
      --------------------------------------------------------------------------- */
   .glass {
     background-color: hsl(var(--glass-bg) / var(--glass-opacity));
-    backdrop-filter: blur(8px) saturate(140%);
-    -webkit-backdrop-filter: blur(8px) saturate(140%);
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
     border: 1px solid hsl(var(--border));
     border-radius: var(--radius-2xl, 1rem);
     transition:
-      border-color 0.3s,
-      background-color 0.3s;
+      border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+      background-color 0.3s ease;
+  }
+  .glass:hover {
+    border-color: rgba(212, 175, 55, 0.35);
+    box-shadow: 0 0 35px -8px rgba(212, 175, 55, 0.16);
   }
 
-  /* Variante "sharp": bordas retas, usada nas grades divididas da referência */
+  /* Variante "sharp": bordas retas */
   .panel-sharp {
-    background-color: hsl(var(--card) / 0.6);
+    background-color: hsl(var(--card) / 0.7);
     border: 1px solid hsl(var(--border));
     border-radius: 0;
   }
 
-  /* Rótulo micro em mono caixa-alta — a assinatura tipográfica do Finex */
+  /* Rótulo micro em mono caixa-alta */
   .micro-label {
     font-family: var(--font-mono);
     font-size: 10px;
     line-height: 1;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: hsl(var(--muted-foreground) / 0.75);
+    color: hsl(var(--muted-foreground));
   }
 
   /* Valor grande e leve, com numerais tabulares */
@@ -222,26 +310,27 @@
     font-feature-settings: "tnum";
   }
 
-  /* Título display (Oswald), caixa-alta e bem apertado */
+  /* Título display de impacto (Anton), caixa-alta */
   .display-title {
     font-family: var(--font-display);
     text-transform: uppercase;
-    letter-spacing: -0.025em;
-    line-height: 0.9;
+    letter-spacing: 0.03em;
+    line-height: 0.95;
   }
 
-  /* Caixa de ícone tintada dos stat cards */
+  /* Caixa de ícone com tom ouro metálico */
   .icon-tile {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border-radius: 0.5rem;
     padding: 0.5rem;
-    background-color: hsl(var(--primary) / 0.1);
-    color: hsl(var(--primary));
+    background-color: rgba(212, 175, 55, 0.12);
+    color: #d4af37;
+    border: 1px solid rgba(212, 175, 55, 0.2);
   }
 
-  /* Item de navegação/lista com caixa de ícone (sidebar da referência) */
+  /* Item de navegação/lista com feedback suave */
   .list-tile {
     border: 1px solid transparent;
     border-radius: var(--radius-lg);
@@ -251,11 +340,11 @@
       color 0.2s;
   }
   .list-tile:hover {
-    background-color: hsl(var(--foreground) / 0.03);
-    border-color: hsl(var(--border));
+    background-color: rgba(212, 175, 55, 0.05);
+    border-color: rgba(212, 175, 55, 0.2);
   }
 
-  /* Efeito "lanterna": brilho radial seguindo o mouse (flashlight-card) */
+  /* Efeito lanterna com halo de ouro sutil */
   .flashlight {
     position: relative;
     --mouse-x: -999px;
@@ -268,7 +357,7 @@
     border-radius: inherit;
     background: radial-gradient(
       600px circle at var(--mouse-x) var(--mouse-y),
-      hsl(var(--foreground) / 0.06),
+      rgba(212, 175, 55, 0.08),
       transparent 40%
     );
     opacity: 0;
@@ -281,14 +370,14 @@
     opacity: 1;
   }
 
-  /* Preenchimento em gradiente da barra de meta */
+  /* Preenchimento da barra em gradiente de ouro */
   .fill-neon {
     background-image: linear-gradient(
       90deg,
-      hsl(var(--primary) / 0.4),
-      hsl(var(--primary))
+      #f5c518,
+      #d4af37
     );
-    box-shadow: 0 0 12px hsl(var(--primary) / 0.4);
+    box-shadow: 0 0 16px rgba(212, 175, 55, 0.45);
   }
 
   /* Ponto de status pulsante com halo (header da referência) */
