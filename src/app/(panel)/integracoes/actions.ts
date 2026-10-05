@@ -19,6 +19,7 @@ import {
   discoverUmblerOrganizations,
   type UmblerOrganization,
 } from "@/lib/umbler/client";
+import { testMetaWaConnection } from "@/lib/meta-wa/client";
 import { testWhatsappConnection } from "@/lib/whatsapp/client";
 import {
   discoverVturbPlayers,
@@ -929,4 +930,80 @@ export async function testConnection(
   return {
     ok: `OK — ${test.accountName ?? account} (${test.accountCurrency ?? "?"}). Escopos: ${test.scopes?.join(", ")}`,
   };
+}
+
+/* --------------------------------------------- WhatsApp Cloud API (Meta) */
+
+/** Valida e grava a credencial da API oficial da Meta (token cifrado). */
+export async function saveMetaWaIntegration(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const accessToken = String(formData.get("access_token") ?? "").trim();
+  const wabaId = String(formData.get("waba_id") ?? "").trim();
+  const phoneNumberId = String(formData.get("phone_number_id") ?? "").trim();
+
+  const admin = createAdminClient();
+
+  // Tudo vazio = desconectar.
+  if (!accessToken && !wabaId && !phoneNumberId) {
+    const { error } = await admin.from("meta_wa_integrations").delete().eq("area_id", ctx.area.id);
+    if (error) return { error: `Falha ao remover: ${error.message}` };
+
+    await audit(ctx.area.id, ctx.user.email, "config.meta_wa_disconnect", {});
+    revalidatePath("/integracoes");
+    revalidatePath("/disparos");
+    return { ok: "API oficial desconectada." };
+  }
+
+  if (!/^\d{5,30}$/.test(wabaId)) return { error: "WABA ID inválido (só números)." };
+  if (!/^\d{5,30}$/.test(phoneNumberId)) return { error: "Phone Number ID inválido (só números)." };
+
+  // Sem token novo, mantém o já salvo e só atualiza os IDs.
+  if (!accessToken) {
+    const { data: existing } = await admin
+      .from("meta_wa_integrations")
+      .select("area_id")
+      .eq("area_id", ctx.area.id)
+      .maybeSingle();
+    if (!existing) return { error: "Cole o token de acesso permanente." };
+
+    const { error } = await admin
+      .from("meta_wa_integrations")
+      .update({ waba_id: wabaId, phone_number_id: phoneNumberId })
+      .eq("area_id", ctx.area.id);
+    if (error) return { error: `Falha ao salvar: ${error.message}` };
+
+    revalidatePath("/integracoes");
+    revalidatePath("/disparos");
+    return { ok: "IDs atualizados (token mantido)." };
+  }
+
+  const test = await testMetaWaConnection(accessToken, phoneNumberId);
+  if (!test.ok) return { error: test.error };
+
+  const { error } = await admin.from("meta_wa_integrations").upsert(
+    {
+      area_id: ctx.area.id,
+      access_token: await encryptSecret(accessToken),
+      waba_id: wabaId,
+      phone_number_id: phoneNumberId,
+      display_phone: test.displayPhone,
+      enabled: true,
+    },
+    { onConflict: "area_id" },
+  );
+  if (error) return { error: `Falha ao salvar: ${error.message}` };
+
+  await audit(ctx.area.id, ctx.user.email, "config.meta_wa_connect", {
+    waba_id: wabaId,
+    phone_number_id: phoneNumberId,
+  });
+
+  revalidatePath("/integracoes");
+  revalidatePath("/disparos");
+  return { ok: `API oficial conectada${test.displayPhone ? ` · ${test.displayPhone}` : ""}.` };
 }

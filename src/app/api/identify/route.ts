@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { z } from "zod";
 
 import {
@@ -8,6 +9,7 @@ import {
   tokenFrom,
 } from "@/lib/capture";
 import { isValidVisitorId, newVisitorId } from "@/lib/ids";
+import { enqueueDispatch, processDispatchQueue } from "@/lib/meta-wa/dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -88,6 +90,22 @@ export async function POST(request: Request) {
   if (error) {
     console.error("[identify] falha ao gravar visitante:", error);
     return json({ error: "storage_error" }, 500, headers);
+  }
+
+  // Follow-up de lead pela API oficial da Meta: só enfileira (regra desligada
+  // = no-op). O envio confere de novo, na hora, se a pessoa já comprou.
+  const telefone = norm(body.telefone);
+  if (telefone) {
+    after(async () => {
+      const ready = await enqueueDispatch({
+        areaId: area.id,
+        trigger: "lead",
+        sourceRef: userId,
+        telefone,
+        context: { nome: norm(body.nome), email: norm(body.email) },
+      });
+      if (ready) await processDispatchQueue({ areaId: area.id, limit: 20, maxMs: 20_000 });
+    });
   }
 
   return json({ userId }, 200, headers);

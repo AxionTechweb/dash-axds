@@ -1,12 +1,17 @@
 import { createHmac } from "node:crypto";
 
+import { after } from "next/server";
+
 import { json } from "@/lib/capture";
 import {
   getPlatform,
   mapStatus,
   type CheckoutPlatform,
 } from "@/lib/checkout/platforms";
+import type { DispatchTrigger } from "@/lib/meta-wa/constants";
+import { enqueueDispatch, processDispatchQueue } from "@/lib/meta-wa/dispatch";
 import { rateLimit } from "@/lib/rate-limit";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   extractAdId,
   firstNumber,
@@ -165,6 +170,44 @@ function deplaceholder(
     : value;
 }
 
+/* ------------------------------------------------------- disparo (Meta) */
+
+function purchaseTrigger(status: string): DispatchTrigger | null {
+  if (status === "approved") return "approved";
+  if (status === "waiting_payment" || status === "pending") return "waiting_payment";
+  if (status === "abandoned") return "abandoned";
+  return null;
+}
+
+/** Nome do comprador, quando o visitante já foi identificado pela captura. */
+async function visitorName(
+  areaId: string,
+  userId: string | null,
+  email: string | null,
+  telefone: string | null,
+): Promise<string | null> {
+  try {
+    const filters = [
+      userId ? `user_id.eq.${userId}` : null,
+      email ? `email.eq.${email}` : null,
+      telefone ? `telefone.eq.${telefone}` : null,
+    ].filter((f): f is string => f !== null);
+    if (filters.length === 0) return null;
+
+    const { data } = await createAdminClient()
+      .from("visitors")
+      .select("nome")
+      .eq("area_id", areaId)
+      .not("nome", "is", null)
+      .or(filters.join(","))
+      .limit(1)
+      .maybeSingle();
+    return (data?.nome as string | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /* ------------------------------------------------------------------ rota */
 
 export async function POST(
@@ -270,6 +313,12 @@ export async function POST(
     city: pick(paths.geoCity),
   };
 
+  const email = pick(paths.email);
+  const telefone = pick(paths.phone);
+  const produto = pick(paths.product);
+  const valor = normalizeAmount(platform, firstNumber(source, paths.value));
+  const moeda = pick(paths.currency);
+
   try {
     await savePurchase({
       areaId: area.areaId,
@@ -278,11 +327,11 @@ export async function POST(
       status,
       // Se o `sck` era um pacote de UTMs, ele NÃO é um id de visitante.
       userId: piped.source ? null : rawUserId,
-      email: pick(paths.email),
-      telefone: pick(paths.phone),
-      produto: pick(paths.product),
-      valor: normalizeAmount(platform, firstNumber(source, paths.value)),
-      moeda: pick(paths.currency),
+      email,
+      telefone,
+      produto,
+      valor,
+      moeda,
       paymentMethod: normalizePaymentMethod(pick(paths.paymentMethod)),
       adId,
       // raw_webhook = payload ORIGINAL (sem o _meta sintético).
@@ -300,6 +349,23 @@ export async function POST(
       return json({ ok: true, ignored: "invalid_payload" }, 200);
     }
     return json({ error: "storage_error" }, 500);
+  }
+
+  // Disparo pela API oficial da Meta: só ENFILEIRA (regra desligada = no-op);
+  // o envio roda depois da resposta e nunca afeta o retorno ao checkout.
+  const trigger = purchaseTrigger(status);
+  if (trigger) {
+    after(async () => {
+      const nome = await visitorName(area.areaId, rawUserId, email, telefone);
+      const ready = await enqueueDispatch({
+        areaId: area.areaId,
+        trigger,
+        sourceRef: transactionId,
+        telefone,
+        context: { nome, email, produto, valor, moeda },
+      });
+      if (ready) await processDispatchQueue({ areaId: area.areaId, limit: 20, maxMs: 20_000 });
+    });
   }
 
   return json({ ok: true }, 200);

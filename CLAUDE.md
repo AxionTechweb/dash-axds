@@ -335,3 +335,17 @@ npx supabase db push   # aplicar migrations no projeto linkado
 
 Sem CLI: cole `supabase/setup.sql` no SQL Editor (aplica tudo) e depois
 `supabase/validacao.sql` (confere). Regenere o `setup.sql` a cada migration nova.
+
+## Disparo pela API oficial da Meta (WhatsApp Cloud API) — página /disparos
+
+- Credencial por área em `meta_wa_integrations` (token cifrado; WABA ID + Phone Number ID), tela em
+  Integrações. Cliente em `src/lib/meta-wa/client.ts`; fila/envio em `src/lib/meta-wa/dispatch.ts`.
+- **Não envia conversões** (CAPI continua proibida): só mensagens de template aprovado pra contatos.
+- 4 gatilhos automáticos (`wa_dispatch_rules`, 1 por área+gatilho, nascem DESLIGADOS): compra aprovada,
+  PIX/boleto pendente, checkout abandonado, lead sem compra. O webhook de compra e o `/api/identify`
+  só **enfileiram** em `wa_dispatch_log` (idempotente por regra+origem) e, com atraso 0, processam via
+  `after()`. Atraso > 0 sai pelo `/api/cron/dispatch` (diário na Vercel Hobby; cron externo a cada 5 min
+  com `Authorization: Bearer $CRON_SECRET` para minutos).
+- Antes de enviar, reconfere: lista de bloqueio, mesmo template ao mesmo número nas últimas 24h, e se a
+  pessoa já comprou (pula PIX/abandono/lead). Disparo manual: prévia do público + confirmação, máx. 500.
+- Pendente: webhook de status da Meta (entregue/lido/falhou) — hoje o log mostra só "aceito pela Meta".
