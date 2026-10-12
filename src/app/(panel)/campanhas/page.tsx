@@ -196,6 +196,12 @@ export default async function CampanhasPage({
         </nav>
 
         <div className="flex items-center gap-2">
+          <Link
+            href="/campanhas/nova"
+            className="inline-flex h-8 items-center rounded-full bg-gradient-to-b from-[hsl(var(--gold-light))] to-[hsl(var(--gold))] px-3.5 text-xs font-semibold text-black hover:brightness-110"
+          >
+            Nova campanha
+          </Link>
           <div
             className="group relative"
             title="Last Click: vendas dos seus webhooks casadas por ad_id. Vendas na Meta: o que o gerenciador reporta pelo modelo de atribuição dele. Os dois NUNCA são somados."

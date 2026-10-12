@@ -11,7 +11,8 @@ Um **painel de LEITURA e análise** de tracking e atribuição de anúncios. O s
 
 - **COLETA** dados próprios: visitas, eventos e compras (webhooks Hotmart/Kiwify).
 - **LÊ** insights e hierarquia de campanhas da Meta Ads (leitura de dados + escrita de
-  *gestão*: status/orçamento das campanhas).
+  *gestão*: status/orçamento das campanhas, e **criação/duplicação de campanhas** em
+  `/campanhas/nova`, sempre PAUSADA por padrão e com confirmação para ativar).
 - **NÃO ENVIA** nenhum evento de conversão para fora: **sem** Conversions API da Meta e
   **sem** Measurement Protocol do GA4. Nunca adicionar envio de conversões.
 
@@ -349,3 +350,12 @@ Sem CLI: cole `supabase/setup.sql` no SQL Editor (aplica tudo) e depois
 - Antes de enviar, reconfere: lista de bloqueio, mesmo template ao mesmo número nas últimas 24h, e se a
   pessoa já comprou (pula PIX/abandono/lead). Disparo manual: prévia do público + confirmação, máx. 500.
 - Pendente: webhook de status da Meta (entregue/lido/falhou) — hoje o log mostra só "aceito pela Meta".
+
+## Subir campanha pelo painel (/campanhas/nova)
+
+- `src/lib/meta/create.ts`: cria campanha → conjunto → criativo → anúncio (objetivos: vendas, lead,
+  tráfego, WhatsApp) e duplica campanha existente (`/{id}/copies`, deep_copy). Se um passo falha,
+  apaga a campanha criada (nunca deixa meia-campanha). Só imagem (JPG/PNG até 4 MB); vídeo não.
+- Páginas, pixels e campanhas vêm da própria conta (`promote_pages`, `adspixels`, `campaigns`).
+- Criada PAUSADA; "Ativar assim que criar" exige confirmação e tudo vai para `audit_log`
+  (`meta.create_campaign` / `meta.duplicate_campaign`). Público fixo: Brasil, idade e gênero.
