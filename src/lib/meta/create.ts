@@ -54,6 +54,29 @@ async function graphGet<T>(
   }
 }
 
+/** GET de uma lista seguindo a paginação da Meta até o fim (sem teto de 100). */
+async function graphGetAll<T>(
+  path: string,
+  token: string,
+  params: Record<string, string>,
+  maxPages = 50,
+): Promise<GraphResult<{ data: T[] }>> {
+  const all: T[] = [];
+  let after: string | undefined;
+  for (let page = 0; page < maxPages; page++) {
+    const result = await graphGet<{ data?: T[]; paging?: { cursors?: { after?: string }; next?: string } }>(
+      path,
+      token,
+      after ? { ...params, after } : params,
+    );
+    if (!result.ok) return page === 0 ? result : { ok: true, data: { data: all } };
+    all.push(...(result.data.data ?? []));
+    after = result.data.paging?.cursors?.after;
+    if (!result.data.paging?.next || !after) break;
+  }
+  return { ok: true, data: { data: all } };
+}
+
 async function graphPost<T>(
   path: string,
   token: string,
@@ -121,12 +144,12 @@ export async function loadAccountAssets(
       fields: "id,name",
       limit: "100",
     }),
-    graphGet<Edge<{ id: string; name: string; effective_status: string; daily_budget?: string }>>(
+    graphGetAll<{ id: string; name: string; effective_status: string; daily_budget?: string }>(
       `${actId}/campaigns`,
       token,
       {
         fields: "id,name,effective_status,daily_budget",
-        limit: "100",
+        limit: "200",
         effective_status: JSON.stringify(["ACTIVE", "PAUSED"]),
       },
     ),
@@ -194,6 +217,11 @@ export type CreateCampaignInput = {
   ageMin: number;
   ageMax: number;
   gender: "all" | "male" | "female";
+  /** Um anúncio por criativo, sem limite. */
+  creatives: CreativeInput[];
+};
+
+export type CreativeInput = {
   adName: string;
   primaryText: string;
   headline: string;
@@ -201,8 +229,14 @@ export type CreateCampaignInput = {
   imageHash: string;
 };
 
+/**
+ * A Meta aceita no máximo 50 anúncios por conjunto. Acima disso a campanha
+ * ganha conjuntos extras com a mesma configuração ("#2", "#3"...).
+ */
+export const MAX_ADS_PER_ADSET = 50;
+
 export type CreateCampaignResult =
-  | { ok: true; campaignId: string; adSetId: string; adId: string }
+  | { ok: true; campaignId: string; adSetIds: string[]; adIds: string[] }
   | { ok: false; error: string };
 
 export async function createCampaign(input: CreateCampaignInput): Promise<CreateCampaignResult> {
@@ -279,37 +313,57 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
     };
   }
 
-  const adSet = await graphPost<{ id: string }>(`${actId}/adsets`, token, adSetBody);
-  if (!adSet.ok) return fail("Conjunto", adSet.error);
+  if (input.creatives.length === 0) return fail("Anúncio", "Adicione ao menos um criativo.");
 
-  // 3) Criativo
   const isWhatsapp = goal === "whatsapp";
-  const linkData: Record<string, unknown> = {
-    image_hash: input.imageHash,
-    message: input.primaryText,
-    name: input.headline,
-    link: isWhatsapp ? "https://api.whatsapp.com/send" : input.link,
-    call_to_action: isWhatsapp
-      ? { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } }
-      : { type: input.cta, value: { link: input.link } },
-  };
+  const adSetIds: string[] = [];
+  const adIds: string[] = [];
 
-  const creative = await graphPost<{ id: string }>(`${actId}/adcreatives`, token, {
-    name: input.adName,
-    object_story_spec: { page_id: input.pageId, link_data: linkData },
-  });
-  if (!creative.ok) return fail("Criativo", creative.error);
+  // Fatias de até 50 criativos: cada fatia vira um conjunto com seus anúncios.
+  for (let start = 0; start < input.creatives.length; start += MAX_ADS_PER_ADSET) {
+    const chunk = input.creatives.slice(start, start + MAX_ADS_PER_ADSET);
+    const setNumber = start / MAX_ADS_PER_ADSET + 1;
 
-  // 4) Anúncio
-  const ad = await graphPost<{ id: string }>(`${actId}/ads`, token, {
-    name: input.adName,
-    adset_id: adSet.data.id,
-    creative: { creative_id: creative.data.id },
-    status,
-  });
-  if (!ad.ok) return fail("Anúncio", ad.error);
+    const adSet = await graphPost<{ id: string }>(`${actId}/adsets`, token, {
+      ...adSetBody,
+      name: setNumber === 1 ? input.campaignName : `${input.campaignName} #${setNumber}`,
+    });
+    if (!adSet.ok) return fail(`Conjunto ${setNumber}`, adSet.error);
+    adSetIds.push(adSet.data.id);
 
-  return { ok: true, campaignId, adSetId: adSet.data.id, adId: ad.data.id };
+    for (const [offset, item] of chunk.entries()) {
+      const label = `Criativo ${start + offset + 1} (${item.adName})`;
+
+      // 3) Criativo
+      const linkData: Record<string, unknown> = {
+        image_hash: item.imageHash,
+        message: item.primaryText,
+        name: item.headline,
+        link: isWhatsapp ? "https://api.whatsapp.com/send" : input.link,
+        call_to_action: isWhatsapp
+          ? { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } }
+          : { type: item.cta, value: { link: input.link } },
+      };
+
+      const creative = await graphPost<{ id: string }>(`${actId}/adcreatives`, token, {
+        name: item.adName,
+        object_story_spec: { page_id: input.pageId, link_data: linkData },
+      });
+      if (!creative.ok) return fail(label, creative.error);
+
+      // 4) Anúncio
+      const ad = await graphPost<{ id: string }>(`${actId}/ads`, token, {
+        name: item.adName,
+        adset_id: adSet.data.id,
+        creative: { creative_id: creative.data.id },
+        status,
+      });
+      if (!ad.ok) return fail(label, ad.error);
+      adIds.push(ad.data.id);
+    }
+  }
+
+  return { ok: true, campaignId, adSetIds, adIds };
 }
 
 /* ------------------------------------------------------------------ duplicar */

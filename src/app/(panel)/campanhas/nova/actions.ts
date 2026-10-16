@@ -5,7 +5,12 @@ import { revalidatePath } from "next/cache";
 import { getActiveArea } from "@/lib/areas";
 import { getCurrentUser } from "@/lib/auth";
 import { CTA_IDS, GOAL_OPTIONS, type CampaignGoal } from "@/lib/meta/create-config";
-import { createCampaign, duplicateCampaign, uploadAdImage } from "@/lib/meta/create";
+import {
+  createCampaign,
+  duplicateCampaign,
+  uploadAdImage,
+  type CreativeInput,
+} from "@/lib/meta/create";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type CreateState = {
@@ -94,13 +99,41 @@ export async function createCampaignAction(
     return { error: "Informe o WhatsApp com DDI e DDD, ex.: 5511999998888." };
   }
 
-  const primaryText = text(formData, "primaryText", 2000);
-  const headline = text(formData, "headline", 255);
-  if (!primaryText) return { error: "Escreva o texto principal do anúncio." };
-  if (!headline) return { error: "Escreva o título do anúncio." };
+  // Criativos: as imagens já subiram uma a uma (uploadAdImageAction); aqui só
+  // chegam os hashes + textos, então não há limite de corpo da Vercel.
+  let rawCreatives: unknown;
+  try {
+    rawCreatives = JSON.parse(String(formData.get("creatives") ?? "[]"));
+  } catch {
+    return { error: "Lista de criativos inválida." };
+  }
+  if (!Array.isArray(rawCreatives) || rawCreatives.length === 0) {
+    return { error: "Adicione ao menos um criativo." };
+  }
 
-  const cta = text(formData, "cta", 30);
-  if (goal !== "whatsapp" && !CTA_IDS.includes(cta)) return { error: "Botão inválido." };
+  const creatives: CreativeInput[] = [];
+  for (const [index, raw] of rawCreatives.entries()) {
+    const item = (raw ?? {}) as Record<string, unknown>;
+    const label = `Criativo ${index + 1}`;
+    const clip = (value: unknown, max: number) => String(value ?? "").trim().slice(0, max);
+
+    const imageHash = clip(item.imageHash, 100);
+    const primaryText = clip(item.primaryText, 2000);
+    const headline = clip(item.headline, 255);
+    const cta = clip(item.cta, 30);
+    if (!/^[a-f0-9]{16,64}$/i.test(imageHash)) return { error: `${label}: envie a imagem.` };
+    if (!primaryText) return { error: `${label}: escreva o texto principal.` };
+    if (!headline) return { error: `${label}: escreva o título.` };
+    if (goal !== "whatsapp" && !CTA_IDS.includes(cta)) return { error: `${label}: botão inválido.` };
+
+    creatives.push({
+      imageHash,
+      primaryText,
+      headline,
+      cta,
+      adName: clip(item.adName, 150) || `${campaignName} - ${index + 1}`,
+    });
+  }
 
   const ageMin = Number(formData.get("ageMin") ?? 18);
   const ageMax = Number(formData.get("ageMax") ?? 65);
@@ -115,14 +148,6 @@ export async function createCampaignAction(
   if (active && formData.get("confirmActive") !== "yes") {
     return { error: "Confirme a ativação imediata." };
   }
-
-  const file = formData.get("image");
-  if (!(file instanceof File) || file.size === 0) return { error: "Envie a imagem do anúncio." };
-  if (!IMAGE_TYPES.includes(file.type)) return { error: "A imagem deve ser JPG ou PNG." };
-  if (file.size > MAX_IMAGE_BYTES) return { error: "A imagem passa de 4 MB. Comprima e tente de novo." };
-
-  const upload = await uploadAdImage(ctx.area.id, accountRowId, file);
-  if (!upload.ok) return { error: `Imagem: ${upload.error}` };
 
   const result = await createCampaign({
     areaId: ctx.area.id,
@@ -139,11 +164,7 @@ export async function createCampaignAction(
     ageMin,
     ageMax,
     gender: gender as "all" | "male" | "female",
-    adName: text(formData, "adName", 150) || campaignName,
-    primaryText,
-    headline,
-    cta,
-    imageHash: upload.hash,
+    creatives,
   });
 
   await audit(ctx.area.id, ctx.user.email, "meta.create_campaign", result.ok ? result.campaignId : null, {
@@ -151,6 +172,7 @@ export async function createCampaignAction(
     name: campaignName,
     dailyBudget,
     active,
+    creatives: creatives.length,
     ok: result.ok,
     error: result.ok ? null : result.error,
   });
@@ -158,12 +180,35 @@ export async function createCampaignAction(
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/campanhas");
+  const summary = `${result.adIds.length} anúncio(s)${result.adSetIds.length > 1 ? ` em ${result.adSetIds.length} conjuntos` : ""}`;
   return {
     ok: active
-      ? "Campanha criada e ATIVA (a Meta ainda analisa o anúncio antes de entregar)."
-      : "Campanha criada PAUSADA. Revise e ative em Campanhas.",
+      ? `Campanha criada e ATIVA com ${summary} (a Meta ainda analisa os anúncios antes de entregar).`
+      : `Campanha criada PAUSADA com ${summary}. Revise e ative em Campanhas.`,
     campaignId: result.campaignId,
   };
+}
+
+export type UploadImageState = { hash?: string; error?: string };
+
+/**
+ * Sobe UMA imagem para a biblioteca da conta e devolve o hash. O formulário
+ * chama uma vez por criativo — cada chamada fica abaixo do limite de corpo da
+ * Vercel (~4,5 MB), então o número de criativos não tem teto.
+ */
+export async function uploadAdImageAction(formData: FormData): Promise<UploadImageState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const accountRowId = text(formData, "accountId", 64);
+  const file = formData.get("image");
+  if (!(file instanceof File) || file.size === 0) return { error: "Envie a imagem do anúncio." };
+  if (!IMAGE_TYPES.includes(file.type)) return { error: "A imagem deve ser JPG ou PNG." };
+  if (file.size > MAX_IMAGE_BYTES) return { error: "A imagem passa de 4 MB. Comprima e tente de novo." };
+
+  const upload = await uploadAdImage(ctx.area.id, accountRowId, file);
+  if (!upload.ok) return { error: upload.error };
+  return { hash: upload.hash };
 }
 
 /** Duplica uma campanha existente (cópia profunda) com novo nome/orçamento. */

@@ -12,6 +12,9 @@ import { CreateCampaignForm, DuplicateCampaignForm } from "./campaign-forms";
 export const metadata: Metadata = { title: "Nova campanha" };
 export const dynamic = "force-dynamic";
 
+/** Muitos criativos = muitas chamadas à Meta numa criação só (2 por anúncio). */
+export const maxDuration = 300;
+
 type SearchParams = { account?: string; mode?: string };
 
 export default async function NovaCampanhaPage({
