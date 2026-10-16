@@ -19,10 +19,6 @@
       "schedule": "0 8 * * *"
     },
     {
-      "path": "/api/cron/umbler",
-      "schedule": "30 8 * * *"
-    },
-    {
       "path": "/api/cron/dispatch",
       "schedule": "0 12 * * *"
     }

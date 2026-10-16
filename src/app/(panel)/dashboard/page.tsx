@@ -357,7 +357,7 @@ export default async function DashboardPage({
             sub={`${formatNumber(safeMetrics.abandonedCount)} carrinho${safeMetrics.abandonedCount === 1 ? "" : "s"}`}
           />
           <KpiCard
-            label="Recuperação Carrinho Umbler"
+            label="Recuperação de Carrinho"
             value={formatCurrency(cartRecovery.revenue, currency)}
             icon={RotateCcw}
             accent="emerald"

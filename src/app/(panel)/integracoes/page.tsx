@@ -15,7 +15,6 @@ import { CopyBox } from "./integration-forms";
 import { MetaConnect, type AccountRow } from "./meta-connect";
 import { SheetsConnect } from "./sheets-connect";
 import { MetaWaConnect } from "./meta-wa-connect";
-import { UmblerConnect } from "./umbler-connect";
 import { VturbConnect, type VturbPlayerRow } from "./vturb-connect";
 import { WhatsappConnect } from "./whatsapp-connect";
 
@@ -55,7 +54,6 @@ export default async function IntegracoesPage() {
     { data: dailySheetsRow },
     { data: ga4Row },
     { data: whatsappRow },
-    { data: umblerRow },
     { data: metaWaRow },
   ] = await Promise.all([
     supabase
@@ -98,11 +96,6 @@ export default async function IntegracoesPage() {
       .eq("area_id", activeArea.id)
       .maybeSingle(),
     supabase
-      .from("umbler_integrations")
-      .select("api_token, organization_id, enabled")
-      .eq("area_id", activeArea.id)
-      .maybeSingle(),
-    supabase
       .from("meta_wa_integrations")
       .select("access_token, waba_id, phone_number_id, display_phone, enabled")
       .eq("area_id", activeArea.id)
@@ -136,7 +129,6 @@ export default async function IntegracoesPage() {
   );
   const ga4On = Boolean(ga4Row?.service_account_json && ga4Row?.enabled !== false);
   const whatsappOn = Boolean(whatsappRow?.api_key && whatsappRow?.enabled !== false);
-  const umblerOn = Boolean(umblerRow?.api_token && umblerRow?.enabled !== false);
   const metaWaOn = Boolean(metaWaRow?.access_token && metaWaRow?.enabled !== false);
 
   const metaOn = accounts.some((a) => a.hasToken);
@@ -189,12 +181,6 @@ export default async function IntegracoesPage() {
         ? "WhatsApp conectado · avisos de venda/conta/regras"
         : "Conectar o WhatsApp (opcional, pros avisos automáticos)",
       done: whatsappOn,
-    },
-    {
-      label: umblerOn
-        ? "Umbler Talk conectada · página /umbler no painel"
-        : "Conectar a Umbler Talk (opcional, pra página /umbler no painel)",
-      done: umblerOn,
     },
   ];
 
@@ -364,19 +350,7 @@ export default async function IntegracoesPage() {
         />
       </Card>
 
-      {/* 9 — Umbler Talk (opcional) */}
-      <Card>
-        <CardHeader>
-          <CardLabel>Umbler Talk</CardLabel>
-          <span className="micro-label">chats · contatos · templates · painel /umbler</span>
-        </CardHeader>
-        <UmblerConnect
-          connected={umblerOn}
-          organizationId={(umblerRow?.organization_id as string) ?? null}
-        />
-      </Card>
-
-      {/* 10 — API oficial da Meta / WhatsApp Cloud API (opcional) */}
+      {/* 9 — API oficial da Meta / WhatsApp Cloud API (opcional) */}
       <Card>
         <CardHeader>
           <CardLabel>API oficial do WhatsApp (Meta)</CardLabel>
