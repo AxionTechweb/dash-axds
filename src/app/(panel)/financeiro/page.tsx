@@ -6,7 +6,8 @@ import { RevenueChart } from "@/components/panel/revenue-chart";
 import { Card } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
-import { getPurchaseMetrics } from "@/lib/metrics";
+import { getAreaInsights } from "@/lib/meta/client";
+import { getPurchaseMetrics, mergeDailySpend } from "@/lib/metrics";
 import { resolvePeriod } from "@/lib/period";
 import { DEFAULT_SETTINGS, getSettings } from "@/lib/settings";
 import { createClient } from "@/lib/supabase/server";
@@ -39,11 +40,13 @@ export default async function FinanceiroPage({
   const currency = settings?.currency ?? DEFAULT_SETTINGS.currency;
   const taxRate = Number(settings?.tax_rate ?? DEFAULT_SETTINGS.tax_rate);
 
-  const metrics = await getPurchaseMetrics(
-    activeArea.id,
-    period.from,
-    period.to,
-  );
+  // "Gasto com Ads" no gráfico vem da Meta, separado das vendas — sem isso,
+  // o gráfico mostrava só a linha de faturamento, com o gasto sempre zerado.
+  const [metrics, meta] = await Promise.all([
+    getPurchaseMetrics(activeArea.id, period.from, period.to),
+    getAreaInsights(activeArea.id, period.from, period.to),
+  ]);
+  const daily = mergeDailySpend(metrics.daily, meta.dailySpend);
 
   // Recortes por produto e plataforma.
   const supabase = await createClient();
@@ -142,7 +145,7 @@ export default async function FinanceiroPage({
           </span>
         </div>
         <div className="sensitive">
-          <RevenueChart data={metrics.daily} currency={currency} />
+          <RevenueChart data={daily} currency={currency} />
         </div>
       </Card>
 

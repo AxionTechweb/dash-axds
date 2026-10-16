@@ -284,76 +284,93 @@ export async function getAreaInsights(
     );
   }
 
-  for (const account of accounts) {
-    if (!account.ads_token) {
-      errors.push(`${account.label}: token não configurado`);
-      continue;
-    }
+  // Contas são independentes entre si (mesmo motivo já aplicado em
+  // src/lib/meta/campaigns.ts) — antes buscava uma de cada vez, somando a
+  // latência de todas; agora rodam em paralelo.
+  const perAccountResults = await Promise.all(
+    accounts.map(async (account) => {
+      const accountErrors: string[] = [];
 
-    // Rate limit conservador por conta.
-    const allowed = await rateLimit(
-      `meta:${account.id}`,
-      META_RATE_LIMIT.max,
-      META_RATE_LIMIT.windowSeconds,
-    );
-    if (!allowed) {
-      errors.push(`${account.label}: rate limit interno atingido`);
-      continue;
-    }
+      if (!account.ads_token) {
+        accountErrors.push(`${account.label}: token não configurado`);
+        return { errors: accountErrors, rows: [] as Record<string, unknown>[], isUsd: false, fx: 1 };
+      }
 
-    const params = new URLSearchParams({
-      fields: "spend,impressions,clicks,actions,action_values",
-      time_range: JSON.stringify({ since: toYmd(from), until: toYmd(to) }),
-      // Uma linha por dia: a mesma chamada serve para o total e para o gráfico.
-      time_increment: "1",
-      access_token: account.ads_token,
-    });
+      const allowed = await rateLimit(
+        `meta:${account.id}`,
+        META_RATE_LIMIT.max,
+        META_RATE_LIMIT.windowSeconds,
+      );
+      if (!allowed) {
+        accountErrors.push(`${account.label}: rate limit interno atingido`);
+        return { errors: accountErrors, rows: [] as Record<string, unknown>[], isUsd: false, fx: 1 };
+      }
 
-    const url = `${META_GRAPH_BASE}/${normalizeAccountId(account.ad_account_id)}/insights?${params}`;
-    const isUsd = account.currency?.toUpperCase() === "USD";
-    const fx = isUsd && rate ? rate.usdToBrl : 1;
-
-    try {
-      const response = await fetch(url, {
-        next: { revalidate: cacheSecondsFor(to) },
+      const params = new URLSearchParams({
+        fields: "spend,impressions,clicks,actions,action_values",
+        time_range: JSON.stringify({ since: toYmd(from), until: toYmd(to) }),
+        // Uma linha por dia: a mesma chamada serve para o total e para o gráfico.
+        time_increment: "1",
+        access_token: account.ads_token,
       });
 
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: { message?: string };
-        } | null;
-        errors.push(
-          `${account.label}: ${body?.error?.message ?? `HTTP ${response.status}`}`,
+      const url = `${META_GRAPH_BASE}/${normalizeAccountId(account.ad_account_id)}/insights?${params}`;
+      const isUsd = account.currency?.toUpperCase() === "USD";
+      const fx = isUsd && rate ? rate.usdToBrl : 1;
+
+      try {
+        const response = await fetch(url, {
+          next: { revalidate: cacheSecondsFor(to) },
+        });
+
+        if (!response.ok) {
+          const body = (await response.json().catch(() => null)) as {
+            error?: { message?: string };
+          } | null;
+          accountErrors.push(
+            `${account.label}: ${body?.error?.message ?? `HTTP ${response.status}`}`,
+          );
+          return { errors: accountErrors, rows: [] as Record<string, unknown>[], isUsd, fx };
+        }
+
+        const payload = (await response.json()) as { data?: unknown[] };
+        return {
+          errors: accountErrors,
+          rows: (payload.data ?? []) as Record<string, unknown>[],
+          isUsd,
+          fx,
+        };
+      } catch (err) {
+        accountErrors.push(
+          `${account.label}: ${err instanceof Error ? err.message : "falha na requisição"}`,
         );
-        continue;
+        return { errors: accountErrors, rows: [] as Record<string, unknown>[], isUsd, fx };
       }
+    }),
+  );
 
-      const payload = (await response.json()) as { data?: unknown[] };
+  for (const { errors: accountErrors, rows, isUsd, fx } of perAccountResults) {
+    errors.push(...accountErrors);
 
-      for (const row of payload.data ?? []) {
-        const r = row as Record<string, unknown>;
-        const rawSpend = Number(r.spend) || 0;
-        const rawRevenue = sumActions(r.action_values, "purchase");
-        const spend = rawSpend * fx;
+    for (const row of rows) {
+      const r = row;
+      const rawSpend = Number(r.spend) || 0;
+      const rawRevenue = sumActions(r.action_values, "purchase");
+      const spend = rawSpend * fx;
 
-        if (isUsd) usdSpendRaw += rawSpend;
+      if (isUsd) usdSpendRaw += rawSpend;
 
-        totals.spend += spend;
-        totals.impressions += Number(r.impressions) || 0;
-        totals.clicks += Number(r.clicks) || 0;
-        totals.metaPurchases += sumActions(r.actions, "purchase");
-        totals.metaRevenue += rawRevenue * fx;
-        totals.initiateCheckout += sumActions(r.actions, "initiate_checkout");
-        totals.landingPageView += sumActions(r.actions, "landing_page_view");
+      totals.spend += spend;
+      totals.impressions += Number(r.impressions) || 0;
+      totals.clicks += Number(r.clicks) || 0;
+      totals.metaPurchases += sumActions(r.actions, "purchase");
+      totals.metaRevenue += rawRevenue * fx;
+      totals.initiateCheckout += sumActions(r.actions, "initiate_checkout");
+      totals.landingPageView += sumActions(r.actions, "landing_page_view");
 
-        // Com time_increment=1 cada linha traz date_start (YYYY-MM-DD).
-        const day = typeof r.date_start === "string" ? r.date_start : null;
-        if (day) dailySpend[day] = (dailySpend[day] ?? 0) + spend;
-      }
-    } catch (err) {
-      errors.push(
-        `${account.label}: ${err instanceof Error ? err.message : "falha na requisição"}`,
-      );
+      // Com time_increment=1 cada linha traz date_start (YYYY-MM-DD).
+      const day = typeof r.date_start === "string" ? r.date_start : null;
+      if (day) dailySpend[day] = (dailySpend[day] ?? 0) + spend;
     }
   }
 

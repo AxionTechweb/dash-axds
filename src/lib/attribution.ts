@@ -422,3 +422,57 @@ export async function getRoasSegmentsByAd(
   }
   return byAd;
 }
+
+export type CartAbandonmentRow = {
+  abandoned: number;
+  approved: number;
+  /** abandonados / (abandonados + aprovados) — null sem nenhum dos dois. */
+  rate: number | null;
+};
+
+export type CartAbandonmentByAd = Map<string, CartAbandonmentRow>;
+
+/**
+ * Carrinhos abandonados por `ad_id` — direto do `status = 'abandoned'` da
+ * própria venda (verdade vinda do webhook da Payt), não da recuperação via
+ * Umbler: o objetivo aqui é medir o criativo que GEROU o abandono, então uma
+ * venda recuperada depois por outro canal não é descontada da contagem.
+ * Usada na tabela de desempenho por criativo (/vturb).
+ */
+export async function getCartAbandonmentByAd(
+  areaId: string,
+  from: Date,
+  to: Date,
+): Promise<CartAbandonmentByAd> {
+  const byAd: CartAbandonmentByAd = new Map();
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("purchases")
+      .select("ad_id, status")
+      .eq("area_id", areaId)
+      .in("status", ["abandoned", "approved"])
+      .not("ad_id", "is", null)
+      .gte("created_at", from.toISOString())
+      .lte("created_at", to.toISOString())
+      .limit(20_000);
+
+    const counts = new Map<string, { abandoned: number; approved: number }>();
+    for (const row of data ?? []) {
+      const adId = row.ad_id as string | null;
+      if (!adId) continue;
+      const entry = counts.get(adId) ?? { abandoned: 0, approved: 0 };
+      if (row.status === "abandoned") entry.abandoned += 1;
+      else entry.approved += 1;
+      counts.set(adId, entry);
+    }
+
+    for (const [adId, c] of counts) {
+      const total = c.abandoned + c.approved;
+      byAd.set(adId, { ...c, rate: total > 0 ? c.abandoned / total : null });
+    }
+  } catch {
+    return new Map();
+  }
+  return byAd;
+}

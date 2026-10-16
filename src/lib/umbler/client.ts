@@ -134,10 +134,24 @@ export async function umblerPost<T>(
       const responseBody = (await response.json().catch(() => null)) as {
         message?: string;
         title?: string;
+        errors?: Record<string, string[]>;
       } | null;
+      // Erro de validação (400) costuma vir só com um `title` genérico
+      // ("One or more validation errors occurred.") — o detalhe de verdade
+      // fica dentro de `errors`, por campo. Sem isso, chamadores que
+      // precisam distinguir motivos específicos (ex.: addChatTag detectando
+      // "já contém essa tag" pra tratar como sucesso idempotente) só veem o
+      // título genérico e nunca o motivo real.
+      const firstFieldError = responseBody?.errors
+        ? Object.values(responseBody.errors)[0]?.[0]
+        : undefined;
       return {
         data: null,
-        error: responseBody?.message ?? responseBody?.title ?? `HTTP ${response.status}`,
+        error:
+          firstFieldError ??
+          responseBody?.message ??
+          responseBody?.title ??
+          `HTTP ${response.status}`,
       };
     }
 
@@ -167,6 +181,58 @@ export async function sendUmblerMessage(
     Message: text,
   });
   return { ok: result.error === null, error: result.error };
+}
+
+/**
+ * Anexa uma tag já existente a um chat. Validado contra a conta real:
+ * `POST /v1/chats/{chatId}/tags/` aceita `{OrganizationId, TagId}` — igual
+ * `umblerPost` já coloca `OrganizationId` no corpo automaticamente, só o
+ * `TagId` é passado aqui. Idempotente: se o chat já tiver a tag, a Umbler
+ * devolve 400 ("Esse chat já contém essa tag") — tratado como sucesso, já
+ * que o resultado desejado (chat marcado) já está garantido.
+ */
+export async function addChatTag(
+  integration: UmblerIntegration,
+  chatId: string,
+  tagId: string,
+): Promise<{ ok: boolean; error: string | null }> {
+  const result = await umblerPost(integration, `/v1/chats/${chatId}/tags/`, {
+    TagId: tagId,
+  });
+  if (result.error && !/já contém essa tag/i.test(result.error)) {
+    return { ok: false, error: result.error };
+  }
+  return { ok: true, error: null };
+}
+
+export type UmblerMessage = {
+  id?: string;
+  content?: string | null;
+  messageType?: string;
+  /** "Contact" = mensagem do cliente; qualquer outro valor = nós/atendente. */
+  source?: string;
+  eventAtUTC?: string;
+};
+
+/**
+ * Mensagens de um chat a partir de um instante (exclusive-ish — pode repetir
+ * a mensagem exatamente nesse instante, por isso o watchdog de handoff passa
+ * um `sinceISO` com alguns segundos de folga pra trás). Usado pelo watchdog
+ * de handoff (ver src/lib/support/handoff-watchdog.ts) pra checar se alguém
+ * já respondeu uma conversa travada em modo humano antes de retomar a IA.
+ */
+export async function getUmblerMessagesSince(
+  integration: UmblerIntegration,
+  chatId: string,
+  sinceISO: string,
+): Promise<{ messages: UmblerMessage[]; error: string | null }> {
+  const result = await umblerGet<{ messages?: UmblerMessage[] }>(
+    integration,
+    `/v1/chats/${chatId}/relative-messages/`,
+    { FromEventUTC: sinceISO, Direction: "TakeAfter", Take: "100" },
+  );
+  if (result.error) return { messages: [], error: result.error };
+  return { messages: result.data?.messages ?? [], error: null };
 }
 
 /**

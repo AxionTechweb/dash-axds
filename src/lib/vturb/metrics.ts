@@ -2,7 +2,12 @@ import "server-only";
 
 import { extractAdId } from "@/lib/webhooks/parse";
 
-import { getVturbAccount, getVturbPlayers, toVturbDateTime, vturbPost } from "./client";
+import {
+  getVturbAccount,
+  getVturbPlayers,
+  toVturbDateTime,
+  vturbPost,
+} from "./client";
 import { VTURB_HOOK_THRESHOLD_SECONDS } from "./config";
 import { discoverVturbPlayers } from "./discover";
 
@@ -68,6 +73,8 @@ export type VturbRow = {
   funnelRetention75: number | null;
   /** Tempo médio assistido (segundos) — aproximado pelo último ponto visto. */
   avgWatchSeconds: number | null;
+  /** `avgWatchSeconds` / duração do vídeo — null sem duração conhecida. */
+  avgWatchPercent: number | null;
   conversions: number;
   conversionRate: number | null;
   /** Receita que a própria Vturb atribui ao criativo (pixel dela, não a nossa). */
@@ -134,7 +141,8 @@ function countAtOrAbove(
 ): number {
   if (!groupValues || groupValues.length === 0) return 0;
   return groupValues.reduce(
-    (sum, { timed, totalUsers }) => sum + (timed >= thresholdSeconds ? totalUsers : 0),
+    (sum, { timed, totalUsers }) =>
+      sum + (timed >= thresholdSeconds ? totalUsers : 0),
     0,
   );
 }
@@ -173,7 +181,8 @@ export async function getVturbByAd(
   // não ficam salvos em vturb_players (evita duplicar o que a Vturb já sabe
   // de cada vídeo) — busca uma vez por rodada via /players/list.
   const discovered = await discoverVturbPlayers(areaId, account.apiKey);
-  if (!discovered.ok) errors.push(`Vturb (metadados dos vídeos): ${discovered.error}`);
+  if (!discovered.ok)
+    errors.push(`Vturb (metadados dos vídeos): ${discovered.error}`);
   const playerMeta = new Map(
     discovered.ok ? discovered.players.map((p) => [p.id, p]) : [],
   );
@@ -181,130 +190,186 @@ export async function getVturbByAd(
   const startDate = toVturbDateTime(from, false);
   const endDate = toVturbDateTime(to, true);
 
-  for (const player of players) {
-    const meta = playerMeta.get(player.playerId);
-    const durationParams = meta
-      ? { video_duration: meta.duration, pitch_time: meta.pitchTime }
-      : {};
+  // Um player por vez era 2 round-trips sequenciais à Vturb cada — com vários
+  // vídeos monitorados isso dominava o tempo de carregamento de /vturb (e de
+  // /vendas, que também chama essa função). Players são independentes entre
+  // si, então rodam em paralelo — mas em lotes de 8 (16 chamadas por lote):
+  // a Vturb tem rate limit interno de VTURB_RATE_LIMIT.max por
+  // VTURB_RATE_LIMIT.windowSeconds (20/60s), compartilhado por TODA a área
+  // (chave `vturb:${areaId}`, não por player) — 8 cobre os players
+  // monitorados hoje (7) numa rodada só, deixando ~20% do orçamento livre
+  // pra uso concorrente (outra aba, o cron semanal). Se o número de players
+  // monitorados crescer além disso, volta a precisar de 2+ rodadas
+  // sequenciais — degrada graciosamente, não quebra. O merge final no
+  // `byAd` (abaixo) preserva a ordem de `players` pra manter o mesmo
+  // desempate "último player processado vence" de antes.
+  const PLAYER_BATCH_SIZE = 8;
+  const perPlayerResults: { rows: [string, VturbRow][]; errors: string[] }[] =
+    [];
+  for (let i = 0; i < players.length; i += PLAYER_BATCH_SIZE) {
+    const batch = players.slice(i, i + PLAYER_BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map(async (player) => {
+        const rows: [string, VturbRow][] = [];
+        const playerErrors: string[] = [];
 
-    const statsResult = await vturbPost<TrafficOriginStatsRow[]>(
-      account,
-      "/traffic_origin/stats",
-      {
-        player_id: player.playerId,
-        query_key: "utm_content",
-        start_date: startDate,
-        end_date: endDate,
-        timezone: "America/Sao_Paulo",
-        ...durationParams,
-      },
+        const meta = playerMeta.get(player.playerId);
+        const durationParams = meta
+          ? { video_duration: meta.duration, pitch_time: meta.pitchTime }
+          : {};
+
+        const statsResult = await vturbPost<TrafficOriginStatsRow[]>(
+          account,
+          "/traffic_origin/stats",
+          {
+            player_id: player.playerId,
+            query_key: "utm_content",
+            start_date: startDate,
+            end_date: endDate,
+            timezone: "America/Sao_Paulo",
+            ...durationParams,
+          },
+        );
+
+        if (statsResult.error) {
+          playerErrors.push(`${player.label}: ${statsResult.error}`);
+          return { rows, errors: playerErrors };
+        }
+
+        // ad_id → (grouped_field original, linha) — o grouped_field original é
+        // reusado como "value" na chamada de retenção logo abaixo.
+        const rowsByAdId = new Map<
+          string,
+          { groupedField: string; row: TrafficOriginStatsRow }
+        >();
+        for (const row of statsResult.data ?? []) {
+          const adId = extractAdId(row.grouped_field, "last");
+          if (!adId) continue; // utm_content sem ad_id numérico — não atribuível a um criativo
+          rowsByAdId.set(adId, { groupedField: row.grouped_field, row });
+        }
+
+        if (rowsByAdId.size === 0) return { rows, errors: playerErrors };
+
+        const groupedFields = [...rowsByAdId.values()].map(
+          (v) => v.groupedField,
+        );
+        const engagementResult = await vturbPost<EngagementByOriginRow[]>(
+          account,
+          "/times/user_engagement_by_traffic_origin",
+          {
+            player_id: player.playerId,
+            query_key: "utm_content",
+            values: groupedFields,
+            start_date: startDate,
+            end_date: endDate,
+            timezone: "America/Sao_Paulo",
+            ...durationParams,
+          },
+        );
+
+        if (engagementResult.error) {
+          playerErrors.push(`${player.label}: ${engagementResult.error}`);
+        }
+
+        const groupValuesByGroupedField = new Map<
+          string,
+          EngagementByOriginRow["group_values"]
+        >();
+        for (const group of engagementResult.data ?? []) {
+          groupValuesByGroupedField.set(group.group_key, group.group_values);
+        }
+
+        const durationSeconds = meta?.duration ?? null;
+
+        for (const [adId, { groupedField, row }] of rowsByAdId) {
+          const groupValues =
+            groupValuesByGroupedField.get(groupedField) ?? null;
+
+          const uniquePlays = Number(row.total_started_session_uniq) || 0;
+          const views = Number(row.total_viewed) || 0;
+
+          // Funil (Hook Rate / Retenção 25-50-75%) pedido pra tabela por
+          // criativo: gancho fixo em 3s sobre views, retenções seguintes sobre
+          // a contagem do gancho — ver comentário do tipo `funnelHookRate`.
+          const countAt3s = groupValues ? countAtOrAbove(groupValues, 3) : 0;
+          const countAt25 =
+            groupValues && durationSeconds
+              ? countAtOrAbove(groupValues, durationSeconds * 0.25)
+              : 0;
+          const countAt50 =
+            groupValues && durationSeconds
+              ? countAtOrAbove(groupValues, durationSeconds * 0.5)
+              : 0;
+          const countAt75 =
+            groupValues && durationSeconds
+              ? countAtOrAbove(groupValues, durationSeconds * 0.75)
+              : 0;
+          const avgWatchSeconds = groupValues
+            ? averageWatchSeconds(groupValues)
+            : null;
+
+          rows.push([
+            adId,
+            {
+              playerId: player.playerId,
+              views,
+              uniqueViews: Number(row.total_viewed_session_uniq) || 0,
+              plays: uniquePlays,
+              rawPlays: Number(row.total_started) || 0,
+              uniquePlays,
+              playRate: toNumberOrNull(row.play_rate),
+              ctaClicks: Number(row.total_clicked_session_uniq) || 0,
+              pitchRetention: toNumberOrNull(row.over_pitch_rate),
+              pitchAudience: Number(row.total_over_pitch) || 0,
+              engagementRate: toNumberOrNull(row.engagement_rate),
+              hookRate: groupValues
+                ? retentionAt(groupValues, VTURB_HOOK_THRESHOLD_SECONDS)
+                : null,
+              retention25:
+                groupValues && durationSeconds
+                  ? retentionAt(groupValues, durationSeconds * 0.25)
+                  : null,
+              retention50:
+                groupValues && durationSeconds
+                  ? retentionAt(groupValues, durationSeconds * 0.5)
+                  : null,
+              retention75:
+                groupValues && durationSeconds
+                  ? retentionAt(groupValues, durationSeconds * 0.75)
+                  : null,
+              retention60: groupValues ? retentionAt(groupValues, 60) : null,
+              avgWatchSeconds,
+              avgWatchPercent:
+                avgWatchSeconds !== null && durationSeconds
+                  ? (avgWatchSeconds / durationSeconds) * 100
+                  : null,
+              conversions: Number(row.total_conversions) || 0,
+              conversionRate: toNumberOrNull(row.overall_conversion_rate),
+              // A API devolve o valor em centavos (mesmo formato de /sessions/stats).
+              vturbRevenue: (Number(row.total_amount_brl) || 0) / 100,
+              funnelHookRate: views > 0 ? (countAt3s / views) * 100 : null,
+              funnelRetention25:
+                countAt3s > 0 ? (countAt25 / countAt3s) * 100 : null,
+              funnelRetention50:
+                countAt3s > 0 ? (countAt50 / countAt3s) * 100 : null,
+              funnelRetention75:
+                countAt3s > 0 ? (countAt75 / countAt3s) * 100 : null,
+            },
+          ]);
+        }
+
+        return { rows, errors: playerErrors };
+      }),
     );
+    perPlayerResults.push(...batchResults);
+  }
 
-    if (statsResult.error) {
-      errors.push(`${player.label}: ${statsResult.error}`);
-      continue;
-    }
-
-    // ad_id → (grouped_field original, linha) — o grouped_field original é
-    // reusado como "value" na chamada de retenção logo abaixo.
-    const rowsByAdId = new Map<
-      string,
-      { groupedField: string; row: TrafficOriginStatsRow }
-    >();
-    for (const row of statsResult.data ?? []) {
-      const adId = extractAdId(row.grouped_field, "last");
-      if (!adId) continue; // utm_content sem ad_id numérico — não atribuível a um criativo
-      rowsByAdId.set(adId, { groupedField: row.grouped_field, row });
-    }
-
-    if (rowsByAdId.size === 0) continue;
-
-    const groupedFields = [...rowsByAdId.values()].map((v) => v.groupedField);
-    const engagementResult = await vturbPost<EngagementByOriginRow[]>(
-      account,
-      "/times/user_engagement_by_traffic_origin",
-      {
-        player_id: player.playerId,
-        query_key: "utm_content",
-        values: groupedFields,
-        start_date: startDate,
-        end_date: endDate,
-        timezone: "America/Sao_Paulo",
-        ...durationParams,
-      },
-    );
-
-    if (engagementResult.error) {
-      errors.push(`${player.label}: ${engagementResult.error}`);
-    }
-
-    const groupValuesByGroupedField = new Map<
-      string,
-      EngagementByOriginRow["group_values"]
-    >();
-    for (const group of engagementResult.data ?? []) {
-      groupValuesByGroupedField.set(group.group_key, group.group_values);
-    }
-
-    const durationSeconds = meta?.duration ?? null;
-
-    for (const [adId, { groupedField, row }] of rowsByAdId) {
-      const groupValues = groupValuesByGroupedField.get(groupedField) ?? null;
-
-      // Um ad_id aparecendo em mais de um player (raro — um anúncio deveria
-      // levar a uma única VSL) fica com o último player processado.
-      const uniquePlays = Number(row.total_started_session_uniq) || 0;
-      const views = Number(row.total_viewed) || 0;
-
-      // Funil (Hook Rate / Retenção 25-50-75%) pedido pra tabela por
-      // criativo: gancho fixo em 3s sobre views, retenções seguintes sobre
-      // a contagem do gancho — ver comentário do tipo `funnelHookRate`.
-      const countAt3s = groupValues ? countAtOrAbove(groupValues, 3) : 0;
-      const countAt25 =
-        groupValues && durationSeconds ? countAtOrAbove(groupValues, durationSeconds * 0.25) : 0;
-      const countAt50 =
-        groupValues && durationSeconds ? countAtOrAbove(groupValues, durationSeconds * 0.5) : 0;
-      const countAt75 =
-        groupValues && durationSeconds ? countAtOrAbove(groupValues, durationSeconds * 0.75) : 0;
-
-      byAd.set(adId, {
-        playerId: player.playerId,
-        views,
-        uniqueViews: Number(row.total_viewed_session_uniq) || 0,
-        plays: uniquePlays,
-        rawPlays: Number(row.total_started) || 0,
-        uniquePlays,
-        playRate: toNumberOrNull(row.play_rate),
-        ctaClicks: Number(row.total_clicked_session_uniq) || 0,
-        pitchRetention: toNumberOrNull(row.over_pitch_rate),
-        pitchAudience: Number(row.total_over_pitch) || 0,
-        engagementRate: toNumberOrNull(row.engagement_rate),
-        hookRate: groupValues
-          ? retentionAt(groupValues, VTURB_HOOK_THRESHOLD_SECONDS)
-          : null,
-        retention25:
-          groupValues && durationSeconds
-            ? retentionAt(groupValues, durationSeconds * 0.25)
-            : null,
-        retention50:
-          groupValues && durationSeconds
-            ? retentionAt(groupValues, durationSeconds * 0.5)
-            : null,
-        retention75:
-          groupValues && durationSeconds
-            ? retentionAt(groupValues, durationSeconds * 0.75)
-            : null,
-        retention60: groupValues ? retentionAt(groupValues, 60) : null,
-        avgWatchSeconds: groupValues ? averageWatchSeconds(groupValues) : null,
-        conversions: Number(row.total_conversions) || 0,
-        conversionRate: toNumberOrNull(row.overall_conversion_rate),
-        // A API devolve o valor em centavos (mesmo formato de /sessions/stats).
-        vturbRevenue: (Number(row.total_amount_brl) || 0) / 100,
-        funnelHookRate: views > 0 ? (countAt3s / views) * 100 : null,
-        funnelRetention25: countAt3s > 0 ? (countAt25 / countAt3s) * 100 : null,
-        funnelRetention50: countAt3s > 0 ? (countAt50 / countAt3s) * 100 : null,
-        funnelRetention75: countAt3s > 0 ? (countAt75 / countAt3s) * 100 : null,
-      });
+  // Merge na ordem original de `players` — mesmo desempate de antes quando um
+  // ad_id aparece em mais de um player (raro): o último processado vence.
+  for (const { rows, errors: playerErrors } of perPlayerResults) {
+    errors.push(...playerErrors);
+    for (const [adId, vturbRow] of rows) {
+      byAd.set(adId, vturbRow);
     }
   }
 

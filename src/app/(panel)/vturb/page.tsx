@@ -21,7 +21,7 @@ import { KpiCard } from "@/components/panel/kpi-card";
 import { VturbRetentionChart } from "@/components/panel/vturb-retention-chart";
 import { Card, CardHeader, CardLabel } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
-import { getRoasSegmentsByAd } from "@/lib/attribution";
+import { getCartAbandonmentByAd, getRoasSegmentsByAd } from "@/lib/attribution";
 import { getUsdToBrlRate } from "@/lib/exchange-rate";
 import { formatCurrency, formatDuration, formatNumber, formatPercent, formatRoas } from "@/lib/format";
 import { getMetaEntities } from "@/lib/meta/campaigns";
@@ -71,14 +71,26 @@ export default async function VturbPage({
   const selected = players.find((p) => p.playerId === params.player) ?? players[0];
   const period = resolvePeriod(params);
 
+  // As duas seções desta página (KPIs do player selecionado acima x tabela
+  // "por criativo" da área inteira abaixo) não dependem uma da outra — antes
+  // rodavam em dois Promise.all SEQUENCIAIS (um bloco todo esperando o
+  // outro terminar à toa). Juntar num só corta essa espera pela metade.
   const [
     { stats, error: statsError },
     { points, funnel, error: curveError },
     { rows: originRows, error: originError },
+    metaAdsResult,
+    vturbByAdResult,
+    roasByAd,
+    abandonmentByAd,
   ] = await Promise.all([
     getPlayerStats(activeArea.id, selected.playerId, period.from, period.to),
     getPlayerRetentionCurve(activeArea.id, selected.playerId, period.from, period.to),
     getPlayerTrafficOrigin(activeArea.id, selected.playerId, period.from, period.to),
+    getMetaEntities(activeArea.id, "ad", period.from, period.to),
+    getVturbByAd(activeArea.id, period.from, period.to),
+    getRoasSegmentsByAd(activeArea.id, period.from, period.to),
+    getCartAbandonmentByAd(activeArea.id, period.from, period.to),
   ]);
 
   // Funil pedido pelo usuário: Hook Rate relativo às VIEWS (não ao total de
@@ -95,13 +107,8 @@ export default async function VturbPage({
 
   // Tabela de desempenho por criativo: junta Meta (nível "ad") + Vturb por
   // ad_id + segmentação de ROAS Front/Backend por ad_id — área inteira, não
-  // só o player selecionado nas abas acima.
-  const [metaAdsResult, vturbByAdResult, roasByAd] = await Promise.all([
-    getMetaEntities(activeArea.id, "ad", period.from, period.to),
-    getVturbByAd(activeArea.id, period.from, period.to),
-    getRoasSegmentsByAd(activeArea.id, period.from, period.to),
-  ]);
-
+  // só o player selecionado nas abas acima. (Buscados junto com os dados do
+  // player selecionado, no Promise.all acima.)
   const activeAds = metaAdsResult.rows.filter(
     (entity) => entity.spend > 0 || entity.impressions > 0,
   );
@@ -136,11 +143,14 @@ export default async function VturbPage({
         (roas?.recoveryCount ?? 0);
       const pageViews = entity.metaLandingPageView;
       const uniqueViews = vturbRow?.uniqueViews ?? 0;
+      const abandonment = abandonmentByAd.get(entity.id) ?? null;
 
       return {
         adId: entity.id,
         adName: entity.name,
         pageViews,
+        cartsAbandoned: abandonment?.abandoned ?? 0,
+        abandonmentRate: abandonment?.rate ?? null,
         // EPC (nome herdado da planilha de referência do usuário, fórmula
         // literal não é "receita/clique" apesar do nome): Page View / Purchase.
         epc: purchases > 0 ? pageViews / purchases : 0,
@@ -446,10 +456,13 @@ export default async function VturbPage({
                   <Th align="right">Conversion Rate</Th>
                   <Th align="right">Revenue (Vturb)</Th>
                   <Th align="right">Retenção 1º min</Th>
+                  <Th align="right">Média assistida</Th>
                   <Th align="right">EPC</Th>
                   <Th align="right">RPV</Th>
                   <Th align="right">ROAS Front</Th>
                   <Th align="right">ROAS Backend</Th>
+                  <Th align="right">Carrinhos abandonados</Th>
+                  <Th align="right">Taxa de abandono</Th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -551,6 +564,20 @@ export default async function VturbPage({
                         : "—"}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.vturb?.avgWatchSeconds != null ? (
+                        <>
+                          {formatDuration(row.vturb.avgWatchSeconds)}
+                          {row.vturb.avgWatchPercent !== null ? (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              ({formatPercent(row.vturb.avgWatchPercent, 1)})
+                            </span>
+                          ) : null}
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
                       {formatNumber(row.epc, 2)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono tabular">
@@ -561,6 +588,12 @@ export default async function VturbPage({
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono tabular">
                       {formatRoas(row.roasBackend)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {formatNumber(row.cartsAbandoned)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tabular">
+                      {row.abandonmentRate !== null ? formatPercent(row.abandonmentRate * 100, 1) : "—"}
                     </td>
                   </tr>
                 ))}

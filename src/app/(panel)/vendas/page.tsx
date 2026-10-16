@@ -7,6 +7,7 @@ import { getJourneysByUserIds, getVisitorJourneys, isIndecisive } from "@/lib/ev
 import { resolvePeriod } from "@/lib/period";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
+import { getVturbByAd } from "@/lib/vturb/metrics";
 
 import { SalesTable, type SaleRow } from "./sales-table";
 import { VisitorJourneyTable } from "./visitor-journey-table";
@@ -130,12 +131,27 @@ async function ComprasTab({
   if (params.plataforma) query = query.eq("plataforma", params.plataforma);
   if (params.q) query = query.ilike("produto", `%${params.q}%`);
 
-  const { data } = await query;
+  // `query` e getVturbByAd não dependem um do outro — rodam em paralelo.
+  // getJourneysByUserIds precisa dos user_id das compras, então só começa
+  // depois que `query` resolve.
+  const [{ data }, { byAd: vturbByAd }] = await Promise.all([
+    query,
+    getVturbByAd(areaId, from, to),
+  ]);
   const rows = (data ?? []) as SaleRow[];
 
   const userIds = rows.map((r) => r.user_id).filter((id): id is string => Boolean(id));
   const journeysMap = await getJourneysByUserIds(areaId, userIds);
   const journeys = Object.fromEntries(journeysMap);
+
+  // Aproximação pedida pelo usuário: a Vturb não expõe, na API pública, o %
+  // assistido por COMPRADOR individual (confirmado testando ao vivo com o
+  // vtid de vendas reais — a API só agrega por dia/UTM/campo, nunca por
+  // visitante) — então mostra o % médio assistido do CRIATIVO que trouxe
+  // aquela venda, mesmo dado já calculado pra tabela de /vturb.
+  const vturbWatchByAd = Object.fromEntries(
+    [...vturbByAd.entries()].map(([adId, row]) => [adId, row.avgWatchPercent]),
+  );
 
   return (
     <>
@@ -186,7 +202,7 @@ async function ComprasTab({
       </form>
 
       <Card>
-        <SalesTable rows={rows} journeys={journeys} />
+        <SalesTable rows={rows} journeys={journeys} vturbWatchByAd={vturbWatchByAd} />
       </Card>
       <p className="text-[0.7rem] text-muted-foreground">
         Dados do comprador exibidos mascarados (LGPD). Clique numa linha para

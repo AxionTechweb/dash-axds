@@ -8,6 +8,7 @@ import {
   mapStatus,
   type CheckoutPlatform,
 } from "@/lib/checkout/platforms";
+import { suggestEmailTypoFix } from "@/lib/email-typo";
 import type { DispatchTrigger } from "@/lib/meta-wa/constants";
 import { enqueueDispatch, processDispatchQueue } from "@/lib/meta-wa/dispatch";
 import { rateLimit } from "@/lib/rate-limit";
@@ -24,6 +25,7 @@ import {
   safeEqual,
   savePurchase,
 } from "@/lib/webhooks/common";
+import { notifyArea } from "@/lib/whatsapp/client";
 
 /**
  * POST /api/webhook/<plataforma>?a=<public_token_da_area>
@@ -208,6 +210,54 @@ async function visitorName(
   }
 }
 
+/**
+ * Corrige sozinho um e-mail com erro de digitação no domínio (ex.:
+ * "a996205238@gmai.com" → "...@gmail.com") ANTES de gravar a compra — pedido
+ * do usuário depois de um caso real em que o acesso foi negado por causa
+ * disso. Mesma heurística (distância de edição <= 2 contra provedores
+ * comuns) já usada pelo agente de suporte pra SUGERIR, só que aqui aplica
+ * direto, sem esperar confirmação — por isso toda correção é registrada no
+ * audit_log E avisada no WhatsApp da equipe, pra dar pra auditar depois (não
+ * é uma automação "silenciosa").
+ */
+async function correctEmailTypo(
+  areaId: string,
+  platformId: string,
+  transactionId: string,
+  email: string | null,
+): Promise<string | null> {
+  if (!email) return email;
+
+  const normalized = email.trim().toLowerCase();
+  const corrected = suggestEmailTypoFix(normalized);
+  if (!corrected || corrected === normalized) return email;
+
+  try {
+    const admin = createAdminClient();
+    await admin.from("audit_log").insert({
+      area_id: areaId,
+      actor_email: null,
+      action: "webhook.email_typo_corrected",
+      target_type: "purchase",
+      details: {
+        plataforma: platformId,
+        transaction_id: transactionId,
+        original_email: normalized,
+        corrected_email: corrected,
+      },
+    });
+  } catch (err) {
+    console.error("[webhook] falha ao registrar correção de e-mail:", err);
+  }
+
+  await notifyArea(
+    areaId,
+    `✏️ E-mail corrigido automaticamente num webhook de compra (${platformId}).\nOriginal: ${normalized}\nCorrigido: ${corrected}\nTransação: ${transactionId}`,
+  );
+
+  return corrected;
+}
+
 /* ------------------------------------------------------------------ rota */
 
 export async function POST(
@@ -313,7 +363,12 @@ export async function POST(
     city: pick(paths.geoCity),
   };
 
-  const email = pick(paths.email);
+  const email = await correctEmailTypo(
+    area.areaId,
+    platform.id,
+    transactionId,
+    pick(paths.email),
+  );
   const telefone = pick(paths.phone);
   const produto = pick(paths.product);
   const valor = normalizeAmount(platform, firstNumber(source, paths.value));

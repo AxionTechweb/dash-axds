@@ -71,6 +71,9 @@ export type PurchaseMetrics = {
   origin: OriginSplit;
   paymentMethods: PaymentMethodRow[];
   recent: RecentSale[];
+  /** Vendas aprovadas por dia da semana / hora do dia, fuso de Brasília. */
+  weekday: WeekdayPoint[];
+  hour: HourPoint[];
 };
 
 export const EMPTY_METRICS: PurchaseMetrics = {
@@ -96,6 +99,8 @@ export const EMPTY_METRICS: PurchaseMetrics = {
   origin: { paid: 0, organic: 0 },
   paymentMethods: [],
   recent: [],
+  weekday: [],
+  hour: [],
 };
 
 function toYmd(date: Date): string {
@@ -162,6 +167,8 @@ export async function getPurchaseMetrics(
     origin: { paid: 0, organic: 0 },
     paymentMethods: [],
     recent: [],
+    weekday: [],
+    hour: [],
   };
 
   const revenueByDay = new Map<string, number>();
@@ -169,6 +176,11 @@ export async function getPurchaseMetrics(
   const regionMap = new Map<string, RegionRow>();
   const productMap = new Map<string, ProductRow>();
   const paymentMethodCounts = new Map<string, number>();
+  // Mesmo cálculo que `getSalesTiming` fazia numa segunda query idêntica a
+  // essa (purchases aprovadas do mesmo período) — unificado aqui pra não
+  // buscar a mesma tabela duas vezes no mesmo carregamento do dashboard.
+  const weekdayCounts = new Map<string, number>();
+  const hourCounts = new Array(24).fill(0);
   // Cliente distinto = e-mail normalizado; sem e-mail, a própria venda conta
   // como única (não dá pra agrupar o que não veio no webhook).
   const uniqueCustomers = new Set<string>();
@@ -180,7 +192,9 @@ export async function getPurchaseMetrics(
       case "approved": {
         metrics.revenue += value;
         metrics.sales += 1;
-        uniqueCustomers.add(row.email?.trim().toLowerCase() || `__no_email_${row.id}`);
+        uniqueCustomers.add(
+          row.email?.trim().toLowerCase() || `__no_email_${row.id}`,
+        );
 
         const valueTier = classifySaleByValue(value);
         if (valueTier === "upsell") {
@@ -225,6 +239,24 @@ export async function getPurchaseMetrics(
         region.sales += 1;
         region.revenue += value;
         regionMap.set(key, region);
+
+        const saleDate = new Date(row.created_at);
+        const weekdayName = saleDate.toLocaleDateString("en-US", {
+          timeZone: "America/Sao_Paulo",
+          weekday: "long",
+        });
+        weekdayCounts.set(
+          weekdayName,
+          (weekdayCounts.get(weekdayName) ?? 0) + 1,
+        );
+        const hourStr = saleDate.toLocaleString("en-US", {
+          timeZone: "America/Sao_Paulo",
+          hour: "2-digit",
+          hour12: false,
+        });
+        // Alguns motores ICU devolvem "24" para meia-noite em vez de "00".
+        const hour = Number(hourStr.replace(/\D/g, "")) % 24;
+        hourCounts[hour] += 1;
         break;
       }
       case "refunded":
@@ -273,6 +305,15 @@ export async function getPurchaseMetrics(
       valor: r.valor,
       created_at: r.created_at,
     }));
+
+  metrics.weekday = WEEKDAY_ORDER.map((day) => ({
+    label: WEEKDAY_LABELS[day],
+    count: weekdayCounts.get(day) ?? 0,
+  }));
+  metrics.hour = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    count: hourCounts[hour],
+  }));
 
   return metrics;
 }
@@ -323,69 +364,6 @@ const WEEKDAY_LABELS: Record<(typeof WEEKDAY_ORDER)[number], string> = {
   Saturday: "Sáb",
   Sunday: "Dom",
 };
-
-/**
- * Vendas aprovadas por dia da semana e por hora do dia, sempre no fuso de
- * Brasília — independe do fuso do servidor (Vercel roda em UTC), senão o
- * pico de vendas apareceria deslocado.
- */
-export async function getSalesTiming(
-  areaId: string,
-  from: Date,
-  to: Date,
-): Promise<{ weekday: WeekdayPoint[]; hour: HourPoint[] }> {
-  const emptyWeekday = WEEKDAY_ORDER.map((day) => ({
-    label: WEEKDAY_LABELS[day],
-    count: 0,
-  }));
-  const emptyHour = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
-
-  try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("purchases")
-      .select("created_at")
-      .eq("area_id", areaId)
-      .eq("status", "approved")
-      .gte("created_at", from.toISOString())
-      .lte("created_at", to.toISOString())
-      .limit(10_000);
-
-    if (error || !data) return { weekday: emptyWeekday, hour: emptyHour };
-
-    const weekdayCounts = new Map<string, number>();
-    const hourCounts = new Array(24).fill(0);
-
-    for (const row of data as { created_at: string }[]) {
-      const date = new Date(row.created_at);
-
-      const weekdayName = date.toLocaleDateString("en-US", {
-        timeZone: "America/Sao_Paulo",
-        weekday: "long",
-      });
-      weekdayCounts.set(weekdayName, (weekdayCounts.get(weekdayName) ?? 0) + 1);
-
-      const hourStr = date.toLocaleString("en-US", {
-        timeZone: "America/Sao_Paulo",
-        hour: "2-digit",
-        hour12: false,
-      });
-      // Alguns motores ICU devolvem "24" para meia-noite em vez de "00".
-      const hour = Number(hourStr.replace(/\D/g, "")) % 24;
-      hourCounts[hour] += 1;
-    }
-
-    return {
-      weekday: WEEKDAY_ORDER.map((day) => ({
-        label: WEEKDAY_LABELS[day],
-        count: weekdayCounts.get(day) ?? 0,
-      })),
-      hour: emptyHour.map((point) => ({ ...point, count: hourCounts[point.hour] })),
-    };
-  } catch {
-    return { weekday: emptyWeekday, hour: emptyHour };
-  }
-}
 
 /** Junta o gasto diário da Meta na série de faturamento. */
 export function mergeDailySpend(
