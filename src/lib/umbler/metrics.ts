@@ -257,3 +257,173 @@ export async function getChatToSaleConversion(
     errors,
   };
 }
+
+// Nomes exatos dos templates (template_label), confirmados contra o painel
+// real da Umbler ("Nome do template" em cada card de Template).
+const BUTTON_RESPONSE_TEMPLATES = ["compra_aprovada_v1", "compra_aprovada_v2"];
+const BUTTON_RESPONSE_TARGET = "liberar acesso";
+
+const RECOVERY_TEMPLATES = ["compra_cancelada_v1", "compra_recusada_v1", "cadastro_abandonado_v1"];
+// Recuperação de carrinho tende a converter rápido ou nunca mais — 7 dias é
+// uma janela generosa sem arriscar atribuir uma compra não relacionada.
+const RECOVERY_CONVERSION_WINDOW_DAYS = 7;
+
+export type TemplateButtonRate = {
+  sends: number;
+  clicks: number;
+  rate: number | null;
+};
+
+/**
+ * Taxa de clique num botão ESPECÍFICO (ex.: "Liberar acesso" dos templates
+ * compra_aprovada_v1/v2) — diferente de `umbler_template_sends.clicks`, que
+ * conta "clicou em QUALQUER botão da mensagem" (ex.: "Falar com suporte"
+ * também contaria lá). Vem de `umbler_template_events`, alimentada pelo
+ * mesmo cron diário — só tem dado a partir de quando essa tabela existe.
+ */
+export async function getTemplateButtonClickRate(
+  areaId: string,
+  from: Date,
+  to: Date,
+  templateLabels: string[] = BUTTON_RESPONSE_TEMPLATES,
+  buttonText: string = BUTTON_RESPONSE_TARGET,
+): Promise<TemplateButtonRate> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("umbler_template_events")
+    .select("button_clicked")
+    .eq("area_id", areaId)
+    .in("template_label", templateLabels)
+    .gte("sent_at", from.toISOString())
+    .lte("sent_at", to.toISOString())
+    .limit(20_000);
+
+  const rows = data ?? [];
+  const sends = rows.length;
+  const target = buttonText.trim().toLowerCase();
+  const clicks = rows.filter(
+    (r) => (r.button_clicked as string | null)?.trim().toLowerCase() === target,
+  ).length;
+
+  return { sends, clicks, rate: sends > 0 ? (clicks / sends) * 100 : null };
+}
+
+export type TemplateConversionRate = {
+  sends: number;
+  conversions: number;
+  rate: number | null;
+  revenue: number;
+};
+
+/**
+ * Taxa de conversão dos templates de recuperação de carrinho: de cada envio,
+ * quantos tiveram uma compra APROVADA do mesmo telefone dentro de
+ * `windowDays` depois do envio. Vem de `umbler_template_events` cruzada com
+ * `purchases` — só tem dado a partir de quando essa tabela existe.
+ */
+export async function getTemplateConversionRate(
+  areaId: string,
+  from: Date,
+  to: Date,
+  templateLabels: string[] = RECOVERY_TEMPLATES,
+  windowDays: number = RECOVERY_CONVERSION_WINDOW_DAYS,
+): Promise<TemplateConversionRate> {
+  const admin = createAdminClient();
+
+  const { data: events } = await admin
+    .from("umbler_template_events")
+    .select("contact_phone, sent_at")
+    .eq("area_id", areaId)
+    .in("template_label", templateLabels)
+    .not("contact_phone", "is", null)
+    .gte("sent_at", from.toISOString())
+    .lte("sent_at", to.toISOString())
+    .limit(20_000);
+
+  const rows = events ?? [];
+  if (rows.length === 0) return { sends: 0, conversions: 0, rate: null, revenue: 0 };
+
+  // Busca compras aprovadas numa janela um pouco maior que o período (pra
+  // pegar conversões de envios no finalzinho do período que só convertem
+  // depois do fim dele).
+  const purchaseWindowEnd = new Date(to.getTime() + windowDays * 24 * 3600 * 1000);
+  const { data: purchases } = await admin
+    .from("purchases")
+    .select("telefone, valor, created_at")
+    .eq("area_id", areaId)
+    .eq("status", "approved")
+    .not("telefone", "is", null)
+    .gte("created_at", from.toISOString())
+    .lte("created_at", purchaseWindowEnd.toISOString())
+    .limit(20_000);
+
+  const purchasesByPhone = new Map<string, { time: number; valor: number }[]>();
+  for (const row of purchases ?? []) {
+    const digits = phoneDigits(row.telefone as string | null);
+    if (!digits) continue;
+    const arr = purchasesByPhone.get(digits) ?? [];
+    arr.push({ time: new Date(row.created_at as string).getTime(), valor: Number(row.valor) || 0 });
+    purchasesByPhone.set(digits, arr);
+  }
+
+  let conversions = 0;
+  let revenue = 0;
+  for (const row of rows) {
+    const digits = phoneDigits(row.contact_phone as string | null);
+    if (!digits) continue;
+    const sentAt = new Date(row.sent_at as string).getTime();
+    const windowEnd = sentAt + windowDays * 24 * 3600 * 1000;
+    const match = (purchasesByPhone.get(digits) ?? []).find(
+      (p) => p.time >= sentAt && p.time <= windowEnd,
+    );
+    if (match) {
+      conversions += 1;
+      revenue += match.valor;
+    }
+  }
+
+  return {
+    sends: rows.length,
+    conversions,
+    rate: rows.length > 0 ? (conversions / rows.length) * 100 : null,
+    revenue,
+  };
+}
+
+const SUPPORT_BUTTON_TARGET = "falar com suporte";
+
+export type ButtonClickTotal = {
+  clicks: number;
+  totalSends: number;
+};
+
+/**
+ * Total de cliques num botão em QUALQUER template (sem filtrar por
+ * template_label) — usada pro "Falar com suporte", que aparece em todos os
+ * templates que já vimos (compra_aprovada, compra_recusada,
+ * cadastro_abandonado, compra_cancelada), diferente das outras duas métricas
+ * acima que são específicas de um grupo de templates.
+ */
+export async function getButtonClickTotal(
+  areaId: string,
+  from: Date,
+  to: Date,
+  buttonText: string = SUPPORT_BUTTON_TARGET,
+): Promise<ButtonClickTotal> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("umbler_template_events")
+    .select("button_clicked")
+    .eq("area_id", areaId)
+    .gte("sent_at", from.toISOString())
+    .lte("sent_at", to.toISOString())
+    .limit(20_000);
+
+  const rows = data ?? [];
+  const target = buttonText.trim().toLowerCase();
+  const clicks = rows.filter(
+    (r) => (r.button_clicked as string | null)?.trim().toLowerCase() === target,
+  ).length;
+
+  return { clicks, totalSends: rows.length };
+}

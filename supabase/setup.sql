@@ -1637,6 +1637,113 @@ create trigger set_updated_at
   before update on public.support_ai_sessions
   for each row execute function public.set_updated_at();
 
+-- =============================================================================
+-- 20260923120000_alunos_programa.sql
+-- =============================================================================
+-- Base de alunos do Programa Active (importada de exportação manual da
+-- plataforma) — usada para consulta/relatório, sem vínculo com area_id (não
+-- é uma tabela multi-tenant, é uma cópia de referência de um único cliente).
+-- =============================================================================
+
+create table public.alunos_programa (
+  id                uuid primary key default gen_random_uuid(),
+  nome              text,
+  email             text not null,
+  telefone          text,
+  ativo             boolean not null default false,
+  cadastro          date,
+  ultimo_login      date,
+  email_confirmado  boolean not null default false,
+  banido            boolean not null default false,
+  produtos          text,
+  status_pagamento  text,
+  ultima_compra     date,
+  created_at        timestamptz not null default now()
+);
+
+create index alunos_programa_email_idx on public.alunos_programa (email);
+
+alter table public.alunos_programa enable row level security;
+
+drop policy if exists "authenticated read" on public.alunos_programa;
+create policy "authenticated read" on public.alunos_programa
+  for select to authenticated using (true);
+
+grant select on public.alunos_programa to authenticated;
+grant all on public.alunos_programa to service_role;
+
+-- ---------------------------------------------------------------------
+-- 20260930120000_support_ai_sessions_last_event_id.sql
+-- ---------------------------------------------------------------------
+-- Deduplicação de eventos "Message" da Umbler Talk — ela pode reenviar o
+-- mesmo evento mais de uma vez (retry, múltiplos webhooks configurados,
+-- etc.), e sem essa checagem a IA respondia a mesma mensagem várias vezes.
+alter table public.support_ai_sessions
+  add column if not exists last_event_id text;
+
+-- ---------------------------------------------------------------------
+-- 20261001120000_composite_indexes_purchases_events.sql
+-- ---------------------------------------------------------------------
+-- Índices compostos pra acelerar as queries reais de dashboard/vturb/umbler,
+-- que hoje filtram por area_id + status + intervalo de created_at (ou
+-- area_id + event_name + created_at) ao mesmo tempo — só existiam índices de
+-- uma coluna cada, forçando um bitmap-AND (ou scan maior) em vez de um único
+-- index scan.
+--
+-- Sem `concurrently`: o SQL Editor do Supabase roda o script dentro de uma
+-- transação, e `CREATE INDEX CONCURRENTLY` não pode rodar dentro de uma
+-- transação (erro 25001). Como as tabelas não são grandes o bastante pra
+-- doer, um `CREATE INDEX` normal (lock breve de escrita durante a criação)
+-- é aceitável aqui.
+create index if not exists purchases_area_created_idx
+  on public.purchases (area_id, created_at);
+
+create index if not exists purchases_area_status_created_idx
+  on public.purchases (area_id, status, created_at);
+
+create index if not exists events_log_area_event_created_idx
+  on public.events_log (area_id, event_name, created_at);
+
+-- ---------------------------------------------------------------------
+-- 20261007120000_umbler_template_events.sql
+-- ---------------------------------------------------------------------
+-- Envio INDIVIDUAL de template (telefone + horário + botão clicado), pra dar
+-- pra calcular: (1) taxa de clique num botão ESPECÍFICO (ex.: "Liberar
+-- acesso" do compra_aprovada), não só "clicou em algum botão" como a tabela
+-- umbler_template_sends já fazia; (2) taxa de conversão de templates de
+-- recuperação de carrinho, cruzando com uma compra aprovada depois do envio.
+--
+-- Alimentada pelo MESMO cron diário que já lê as mensagens de cada chat pra
+-- preencher umbler_template_sends — sem chamada extra na API da Umbler, só
+-- mais uma linha gravada por envio de template encontrado.
+create table public.umbler_template_events (
+  id              uuid primary key default gen_random_uuid(),
+  area_id         uuid not null references public.areas(id) on delete cascade,
+  message_id      text not null,
+  chat_id         text not null,
+  contact_phone   text,
+  template_id     text not null,
+  template_label  text,
+  button_clicked  text,
+  sent_at         timestamptz not null,
+  created_at      timestamptz not null default now(),
+  unique (area_id, message_id)
+);
+
+create index umbler_template_events_area_label_idx
+  on public.umbler_template_events (area_id, template_label);
+
+create index umbler_template_events_area_phone_idx
+  on public.umbler_template_events (area_id, contact_phone);
+
+alter table public.umbler_template_events enable row level security;
+
+create policy "authenticated read" on public.umbler_template_events
+  for select to authenticated using (true);
+
+grant select on public.umbler_template_events to authenticated;
+grant all on public.umbler_template_events to service_role;
+
 -- ---------------------------------------------------------------------
 -- Histórico de migrations: faz um futuro `supabase db push` saber que
 -- estas já foram aplicadas, evitando reaplicar tudo por cima.
@@ -1674,7 +1781,11 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260828120200', 'add_ticket_medio_column'),
   ('20260901120000', 'umbler_template_clicks'),
   ('20260914120000', 'meta_account_alerts_muted'),
-  ('20260918120000', 'support_ai_sessions')
+  ('20260918120000', 'support_ai_sessions'),
+  ('20260923120000', 'alunos_programa'),
+  ('20260930120000', 'support_ai_sessions_last_event_id'),
+  ('20261001120000', 'composite_indexes_purchases_events'),
+  ('20261007120000', 'umbler_template_events')
 on conflict (version) do nothing;
 
 commit;

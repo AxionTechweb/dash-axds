@@ -88,9 +88,10 @@ export async function testWhatsappConnection(
   }
 }
 
-/** Envia uma mensagem de texto. Nunca lança — erro vira `{ok:false}`. */
-export async function sendWhatsappMessage(
+/** Envia uma mensagem de texto pra um número arbitrário (não o target_number fixo da área). Nunca lança — erro vira `{ok:false}`. */
+export async function sendWhatsappMessageTo(
   integration: WhatsappIntegration,
+  number: string,
   text: string,
 ): Promise<{ ok: boolean; error: string | null }> {
   try {
@@ -102,7 +103,7 @@ export async function sendWhatsappMessage(
           apikey: integration.apiKey,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ number: integration.targetNumber, text }),
+        body: JSON.stringify({ number, text }),
         cache: "no-store",
       },
     );
@@ -121,6 +122,14 @@ export async function sendWhatsappMessage(
   }
 }
 
+/** Envia uma mensagem de texto pro target_number fixo da área. Nunca lança — erro vira `{ok:false}`. */
+export async function sendWhatsappMessage(
+  integration: WhatsappIntegration,
+  text: string,
+): Promise<{ ok: boolean; error: string | null }> {
+  return sendWhatsappMessageTo(integration, integration.targetNumber, text);
+}
+
 /**
  * Ponto único usado pelo motor de alertas/Regras: busca a integração da área
  * e manda a mensagem. Se a área não tem WhatsApp conectado, é um no-op
@@ -133,5 +142,28 @@ export async function notifyArea(areaId: string, text: string): Promise<void> {
   const result = await sendWhatsappMessage(integration, text);
   if (!result.ok) {
     console.error(`[whatsapp] falha ao enviar aviso (área ${areaId}):`, result.error);
+  }
+}
+
+/**
+ * Mesmo espírito de `notifyArea`, mas pra um número fixo específico (ex.: o
+ * setor financeiro, que recebe avisos de pedido de reembolso) em vez do
+ * target_number configurado da área — reaproveita a mesma instância
+ * Evolution já conectada na área.
+ */
+export async function notifyNumber(
+  areaId: string,
+  number: string,
+  text: string,
+): Promise<void> {
+  const integration = await getWhatsappIntegration(areaId);
+  if (!integration) return;
+
+  const result = await sendWhatsappMessageTo(integration, number, text);
+  if (!result.ok) {
+    console.error(
+      `[whatsapp] falha ao enviar aviso pro número ${number} (área ${areaId}):`,
+      result.error,
+    );
   }
 }

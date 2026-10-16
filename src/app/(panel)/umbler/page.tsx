@@ -1,10 +1,12 @@
 import {
   Clock,
+  Headset,
   MessageCircle,
   MessageSquareText,
   MousePointerClick,
   RotateCcw,
   ShoppingBag,
+  TrendingUp,
   TriangleAlert,
   Users,
   Wallet,
@@ -19,9 +21,12 @@ import { formatCurrency, formatDuration, formatNumber, formatPercent } from "@/l
 import { resolvePeriod } from "@/lib/period";
 import { createClient } from "@/lib/supabase/server";
 import {
+  getButtonClickTotal,
   getChatToSaleConversion,
   getChatVolumeSummary,
   getRatingsSummary,
+  getTemplateButtonClickRate,
+  getTemplateConversionRate,
 } from "@/lib/umbler/metrics";
 
 export const metadata: Metadata = { title: "Umbler" };
@@ -68,11 +73,17 @@ export default async function UmblerPage({
     { summary: ratings, errors: ratingErrors },
     { summary: conversion, errors: conversionErrors },
     cartRecovery,
+    liberarAcessoRate,
+    recoveryConversion,
+    falarComSuporteTotal,
   ] = await Promise.all([
     getChatVolumeSummary(activeArea.id, period.from, period.to),
     getRatingsSummary(activeArea.id, period.from, period.to),
     getChatToSaleConversion(activeArea.id, period.from, period.to),
     getCartRecoveryMetrics(activeArea.id, period.from, period.to),
+    getTemplateButtonClickRate(activeArea.id, period.from, period.to),
+    getTemplateConversionRate(activeArea.id, period.from, period.to),
+    getButtonClickTotal(activeArea.id, period.from, period.to),
   ]);
 
   const errors = [...chatErrors, ...ratingErrors, ...conversionErrors];
@@ -211,6 +222,37 @@ export default async function UmblerPage({
           sub={
             totalTemplateSends > 0
               ? `${formatPercent((totalTemplateClicks / totalTemplateSends) * 100, 1)} dos envios`
+              : undefined
+          }
+        />
+        <KpiCard
+          label='Taxa de resposta — "Liberar acesso"'
+          value={
+            liberarAcessoRate.rate !== null ? formatPercent(liberarAcessoRate.rate, 1) : "—"
+          }
+          icon={MousePointerClick}
+          accent="primary"
+          sensitive={false}
+          sub={`${formatNumber(liberarAcessoRate.clicks)} de ${formatNumber(liberarAcessoRate.sends)} envios (compra_aprovada)`}
+        />
+        <KpiCard
+          label="Taxa de conversão — recuperação"
+          value={
+            recoveryConversion.rate !== null ? formatPercent(recoveryConversion.rate, 1) : "—"
+          }
+          icon={TrendingUp}
+          accent="emerald"
+          sub={`${formatNumber(recoveryConversion.conversions)} de ${formatNumber(recoveryConversion.sends)} envios · ${formatCurrency(recoveryConversion.revenue)} em 7 dias`}
+        />
+        <KpiCard
+          label='Cliques em "Falar com suporte"'
+          value={formatNumber(falarComSuporteTotal.clicks)}
+          icon={Headset}
+          accent="purple"
+          sensitive={false}
+          sub={
+            falarComSuporteTotal.totalSends > 0
+              ? `${formatPercent((falarComSuporteTotal.clicks / falarComSuporteTotal.totalSends) * 100, 1)} dos envios de template`
               : undefined
           }
         />

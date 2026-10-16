@@ -83,7 +83,11 @@ async function syncArea(areaId: string, deadline: number): Promise<UmblerSyncSum
   }
 
   // Chats que podem ter mensagem no dia alvo (última mensagem >= início do dia).
+  // Telefone do contato já vem de graça na mesma resposta (validado contra a
+  // API real) — guardado pra gravar junto de cada evento de template abaixo,
+  // sem precisar de uma chamada por chat só pra isso.
   const chatIds: string[] = [];
+  const phoneByChat = new Map<string, string | null>();
   let skip = 0;
   for (let page = 0; page < MAX_CHAT_PAGES; page += 1) {
     if (Date.now() > deadline) {
@@ -91,7 +95,9 @@ async function syncArea(areaId: string, deadline: number): Promise<UmblerSyncSum
       errors.push("tempo esgotado ao listar chats — parcial");
       break;
     }
-    const result = await umblerGet<{ items?: { id?: string }[] }>(integration, "/v1/chats/", {
+    const result = await umblerGet<{
+      items?: { id?: string; contact?: { phoneNumber?: string | null } }[];
+    }>(integration, "/v1/chats/", {
       RelativeStartFromEventUTC: from.toISOString(),
       RelativeTakeDirection: "TakeAfter",
       ChatOrderBy: "LastMessage",
@@ -104,7 +110,11 @@ async function syncArea(areaId: string, deadline: number): Promise<UmblerSyncSum
       break;
     }
     const items = result.data?.items ?? [];
-    for (const c of items) if (c.id) chatIds.push(c.id);
+    for (const c of items) {
+      if (!c.id) continue;
+      chatIds.push(c.id);
+      phoneByChat.set(c.id, c.contact?.phoneNumber ?? null);
+    }
     if (items.length < PAGE_SIZE) break;
     skip += PAGE_SIZE;
   }
@@ -114,6 +124,17 @@ async function syncArea(areaId: string, deadline: number): Promise<UmblerSyncSum
   // mas não aborta o que já está em andamento.
   const sendsByTemplate = new Map<string, number>();
   const clicksByTemplate = new Map<string, number>();
+  // Evento por envio individual (telefone + botão clicado) — alimenta
+  // umbler_template_events, usada pra taxa de clique POR BOTÃO específico e
+  // pra conversão de templates de recuperação (cruza com `purchases` depois).
+  const templateEvents: {
+    messageId: string;
+    chatId: string;
+    contactPhone: string | null;
+    templateId: string;
+    buttonClicked: string | null;
+    sentAt: string;
+  }[] = [];
   let chatsScanned = 0;
 
   const pending = [...chatIds];
@@ -123,14 +144,16 @@ async function syncArea(areaId: string, deadline: number): Promise<UmblerSyncSum
       return;
     }
     chatsScanned += 1;
+    const contactPhone = phoneByChat.get(chatId) ?? null;
 
     let cursor = from;
     for (let page = 0; page < MAX_MESSAGE_PAGES; page += 1) {
       const result = await umblerGet<{
         messages?: {
+          id?: string;
           templateId?: string | null;
           eventAtUTC?: string;
-          buttons?: { selected?: boolean }[] | null;
+          buttons?: { selected?: boolean; text?: string | null }[] | null;
         }[];
       }>(integration, `/v1/chats/${chatId}/relative-messages/`, {
         FromEventUTC: cursor.toISOString(),
@@ -156,9 +179,21 @@ async function syncArea(areaId: string, deadline: number): Promise<UmblerSyncSum
         if (m.templateId) {
           sendsByTemplate.set(m.templateId, (sendsByTemplate.get(m.templateId) ?? 0) + 1);
 
+          const clickedButton = m.buttons?.find((b) => b.selected);
           // Conta como clique se PELO MENOS UM botão da mensagem foi selecionado.
-          if (m.buttons?.some((b) => b.selected)) {
+          if (clickedButton) {
             clicksByTemplate.set(m.templateId, (clicksByTemplate.get(m.templateId) ?? 0) + 1);
+          }
+
+          if (m.id) {
+            templateEvents.push({
+              messageId: m.id,
+              chatId,
+              contactPhone,
+              templateId: m.templateId,
+              buttonClicked: clickedButton?.text ?? null,
+              sentAt: m.eventAtUTC,
+            });
           }
         }
       }
@@ -182,6 +217,28 @@ async function syncArea(areaId: string, deadline: number): Promise<UmblerSyncSum
       { onConflict: "area_id,day,template_id" },
     );
     if (error) errors.push(`persist ${templateId}: ${error.message}`);
+  }
+
+  if (templateEvents.length > 0) {
+    const rows = templateEvents.map((e) => ({
+      area_id: areaId,
+      message_id: e.messageId,
+      chat_id: e.chatId,
+      contact_phone: e.contactPhone,
+      template_id: e.templateId,
+      template_label: templateLabels.get(e.templateId) ?? null,
+      button_clicked: e.buttonClicked,
+      sent_at: e.sentAt,
+    }));
+    // Em lotes — um upsert só com milhares de linhas arrisca estourar o
+    // limite de payload/tempo da query.
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const { error } = await admin
+        .from("umbler_template_events")
+        .upsert(rows.slice(i, i + BATCH_SIZE), { onConflict: "area_id,message_id" });
+      if (error) errors.push(`persist template_events: ${error.message}`);
+    }
   }
 
   return { areaId, day: dayYmd, chatsScanned, templatesFound: sendsByTemplate.size, partial, errors };

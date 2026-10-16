@@ -36,6 +36,15 @@ export type MetaEntity = {
   accountCurrency: string | null;
   /** Nome da campanha de origem (só relevante no nível "ad" — mesma campanha em todas as linhas do insight). */
   campaignName: string | null;
+  /**
+   * IDs do pai na hierarquia — vêm de graça no insight bruto (sempre
+   * buscado em level=ad, ver fetchAdInsights) independente do `level`
+   * pedido. Em level="campaign" `campaignId` é o próprio id; em
+   * level="adset"/"ad" é o id da campanha-mãe — é o que permite filtrar
+   * "conjuntos/anúncios desta campanha" na tela de drill-down.
+   */
+  campaignId: string | null;
+  adsetId: string | null;
   spend: number;
   impressions: number;
   clicks: number;
@@ -46,6 +55,8 @@ export type MetaEntity = {
   metaLandingPageView: number;
   /** ad_ids que compõem a linha — base da atribuição Last Click. */
   adIds: string[];
+  /** Miniatura do criativo — só vem preenchida em level="ad" (ver fetchEntities). */
+  thumbnailUrl: string | null;
 };
 
 export type CampaignsResult = {
@@ -130,9 +141,11 @@ async function fetchEntities(
   level: MetaLevel,
   cacheSeconds: number,
 ) {
+  // No nível "ad", pede a miniatura do criativo via expansão de campo —
+  // vem na MESMA chamada (sem round-trip extra), usada no card de /criativos.
   const fields =
     level === "ad"
-      ? "id,name,status,effective_status"
+      ? "id,name,status,effective_status,creative{thumbnail_url}"
       : "id,name,status,effective_status,daily_budget,lifetime_budget";
 
   const params = new URLSearchParams({
@@ -164,116 +177,159 @@ export async function getMetaEntities(
   }
 
   const cacheSeconds = cacheSecondsFor(to);
-  const rows: MetaEntity[] = [];
   const errors: string[] = [];
 
-  for (const account of accounts) {
-    if (!account.ads_token) {
-      errors.push(`${account.label}: token não configurado`);
-      continue;
-    }
-
-    // Duas chamadas por conta (insights + metadados) — respeitando o limite.
-    const allowed = await rateLimit(
-      `meta:${account.id}`,
-      META_RATE_LIMIT.max,
-      META_RATE_LIMIT.windowSeconds,
-    );
-    if (!allowed) {
-      errors.push(`${account.label}: rate limit interno atingido`);
-      continue;
-    }
-
-    const [insights, entities] = await Promise.all([
-      fetchAdInsights(account, from, to, cacheSeconds),
-      fetchEntities(account, level, cacheSeconds),
-    ]);
-
-    if (insights.error) errors.push(`${account.label}: ${insights.error}`);
-    if (entities.error) errors.push(`${account.label}: ${entities.error}`);
-
-    // Agrega os insights de anúncio para o nível pedido.
-    const idField = LEVEL_ID_FIELD[level];
-    const aggregated = new Map<
-      string,
-      Omit<MetaEntity, "id" | "name" | "level" | "status" | "effectiveStatus" | "budgetAmount" | "budgetType" | "accountId" | "accountLabel" | "accountCurrency">
-    >();
-
-    for (const raw of insights.data) {
-      const row = raw as Record<string, unknown>;
-      const id = row[idField];
-      if (typeof id !== "string") continue;
-
-      const entry = aggregated.get(id) ?? {
-        campaignName: null,
-        spend: 0,
-        impressions: 0,
-        clicks: 0,
-        metaPurchases: 0,
-        metaRevenue: 0,
-        metaInitiateCheckout: 0,
-        metaLandingPageView: 0,
-        adIds: [] as string[],
-      };
-
-      entry.spend += Number(row.spend) || 0;
-      entry.impressions += Number(row.impressions) || 0;
-      entry.clicks += Number(row.clicks) || 0;
-      entry.metaPurchases += sumActions(row.actions, "purchase");
-      entry.metaRevenue += sumActions(row.action_values, "purchase");
-      entry.metaInitiateCheckout += sumActions(row.actions, "initiate_checkout");
-      entry.metaLandingPageView += sumActions(row.actions, "landing_page_view");
-      if (!entry.campaignName && typeof row.campaign_name === "string") {
-        entry.campaignName = row.campaign_name;
+  // Contas são independentes entre si (rate limit do Meta é POR conta,
+  // `meta:${account.id}`, nunca compartilhado) — antes eram buscadas uma de
+  // cada vez, somando a latência de todas; agora rodam em paralelo.
+  const perAccountRows = await Promise.all(
+    accounts.map(async (account): Promise<MetaEntity[]> => {
+      if (!account.ads_token) {
+        errors.push(`${account.label}: token não configurado`);
+        return [];
       }
 
-      const adId = row.ad_id;
-      if (typeof adId === "string" && !entry.adIds.includes(adId)) {
-        entry.adIds.push(adId);
+      // Duas chamadas por conta (insights + metadados) — respeitando o limite.
+      const allowed = await rateLimit(
+        `meta:${account.id}`,
+        META_RATE_LIMIT.max,
+        META_RATE_LIMIT.windowSeconds,
+      );
+      if (!allowed) {
+        errors.push(`${account.label}: rate limit interno atingido`);
+        return [];
       }
 
-      aggregated.set(id, entry);
-    }
+      const [insights, entities] = await Promise.all([
+        fetchAdInsights(account, from, to, cacheSeconds),
+        fetchEntities(account, level, cacheSeconds),
+      ]);
 
-    for (const raw of entities.data) {
-      const entity = raw as Record<string, unknown>;
-      const id = entity.id;
-      if (typeof id !== "string") continue;
+      if (insights.error) errors.push(`${account.label}: ${insights.error}`);
+      if (entities.error) errors.push(`${account.label}: ${entities.error}`);
 
-      const metrics = aggregated.get(id) ?? {
-        campaignName: null,
-        spend: 0,
-        impressions: 0,
-        clicks: 0,
-        metaPurchases: 0,
-        metaRevenue: 0,
-        metaInitiateCheckout: 0,
-        metaLandingPageView: 0,
-        adIds: level === "ad" ? [id] : [],
-      };
+      const accountRows: MetaEntity[] = [];
 
-      const daily = centsToAmount(entity.daily_budget);
-      const lifetime = centsToAmount(entity.lifetime_budget);
+      // Agrega os insights de anúncio para o nível pedido.
+      const idField = LEVEL_ID_FIELD[level];
+      const aggregated = new Map<
+        string,
+        Omit<
+          MetaEntity,
+          | "id"
+          | "name"
+          | "level"
+          | "status"
+          | "effectiveStatus"
+          | "budgetAmount"
+          | "budgetType"
+          | "accountId"
+          | "accountLabel"
+          | "accountCurrency"
+          | "thumbnailUrl"
+        >
+      >();
 
-      rows.push({
-        id,
-        name: typeof entity.name === "string" ? entity.name : id,
-        level,
-        status: typeof entity.status === "string" ? entity.status : "UNKNOWN",
-        effectiveStatus:
-          typeof entity.effective_status === "string"
-            ? entity.effective_status
-            : "",
-        budgetAmount: daily ?? lifetime,
-        budgetType: daily ? "daily" : lifetime ? "lifetime" : null,
-        accountId: account.id,
-        accountLabel: account.label,
-        accountCurrency: account.currency,
-        ...metrics,
-        adIds: level === "ad" ? [id] : metrics.adIds,
-      });
-    }
-  }
+      for (const raw of insights.data) {
+        const row = raw as Record<string, unknown>;
+        const id = row[idField];
+        if (typeof id !== "string") continue;
+
+        const entry = aggregated.get(id) ?? {
+          campaignName: null,
+          campaignId: null,
+          adsetId: null,
+          spend: 0,
+          impressions: 0,
+          clicks: 0,
+          metaPurchases: 0,
+          metaRevenue: 0,
+          metaInitiateCheckout: 0,
+          metaLandingPageView: 0,
+          adIds: [] as string[],
+        };
+
+        entry.spend += Number(row.spend) || 0;
+        entry.impressions += Number(row.impressions) || 0;
+        entry.clicks += Number(row.clicks) || 0;
+        entry.metaPurchases += sumActions(row.actions, "purchase");
+        entry.metaRevenue += sumActions(row.action_values, "purchase");
+        entry.metaInitiateCheckout += sumActions(
+          row.actions,
+          "initiate_checkout",
+        );
+        entry.metaLandingPageView += sumActions(
+          row.actions,
+          "landing_page_view",
+        );
+        if (!entry.campaignName && typeof row.campaign_name === "string") {
+          entry.campaignName = row.campaign_name;
+        }
+        if (!entry.campaignId && typeof row.campaign_id === "string") {
+          entry.campaignId = row.campaign_id;
+        }
+        if (!entry.adsetId && typeof row.adset_id === "string") {
+          entry.adsetId = row.adset_id;
+        }
+
+        const adId = row.ad_id;
+        if (typeof adId === "string" && !entry.adIds.includes(adId)) {
+          entry.adIds.push(adId);
+        }
+
+        aggregated.set(id, entry);
+      }
+
+      for (const raw of entities.data) {
+        const entity = raw as Record<string, unknown>;
+        const id = entity.id;
+        if (typeof id !== "string") continue;
+
+        const metrics = aggregated.get(id) ?? {
+          campaignName: null,
+          campaignId: level === "campaign" ? id : null,
+          adsetId: level === "adset" ? id : null,
+          spend: 0,
+          impressions: 0,
+          clicks: 0,
+          metaPurchases: 0,
+          metaRevenue: 0,
+          metaInitiateCheckout: 0,
+          metaLandingPageView: 0,
+          adIds: level === "ad" ? [id] : [],
+        };
+
+        const daily = centsToAmount(entity.daily_budget);
+        const lifetime = centsToAmount(entity.lifetime_budget);
+        const creative = entity.creative as { thumbnail_url?: string } | null | undefined;
+        const thumbnailUrl =
+          typeof creative?.thumbnail_url === "string" ? creative.thumbnail_url : null;
+
+        accountRows.push({
+          id,
+          name: typeof entity.name === "string" ? entity.name : id,
+          level,
+          status: typeof entity.status === "string" ? entity.status : "UNKNOWN",
+          effectiveStatus:
+            typeof entity.effective_status === "string"
+              ? entity.effective_status
+              : "",
+          budgetAmount: daily ?? lifetime,
+          budgetType: daily ? "daily" : lifetime ? "lifetime" : null,
+          accountId: account.id,
+          accountLabel: account.label,
+          accountCurrency: account.currency,
+          thumbnailUrl,
+          ...metrics,
+          adIds: level === "ad" ? [id] : metrics.adIds,
+        });
+      }
+
+      return accountRows;
+    }),
+  );
+
+  const rows = perAccountRows.flat();
 
   return { rows, configured: true, errors };
 }

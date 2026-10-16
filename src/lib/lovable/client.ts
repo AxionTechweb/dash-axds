@@ -1,18 +1,19 @@
 import "server-only";
 
 /**
- * Client fino pro app "Programa Active" (hospedado na Lovable Cloud, banco
- * separado deste projeto). Em vez de dar acesso direto ao Postgres de outro
- * sistema, o próprio app expõe uma Edge Function só de leitura, protegida por
- * um segredo compartilhado.
+ * Client fino pro app "Programa Active" (app-programa, projeto Vercel próprio
+ * — banco Supabase separado deste projeto). Em vez de dar acesso direto ao
+ * Postgres de outro sistema, o próprio app expõe rotas só de leitura/gravação
+ * controlada, protegidas por um segredo compartilhado.
  *
- * Validado ao vivo antes de implementar: 401 com segredo errado,
- * `{found:false}` pra e-mail inexistente, `{found:true, has_access, email}`
- * pra e-mail cadastrado.
+ * URL trocada de programa-active.com (domínio custom servindo de um
+ * deployment desatualizado, fora do nosso controle) para app-programa.vercel.app
+ * (projeto Vercel que de fato atualizamos) depois de confirmar que o domínio
+ * custom não refletia variáveis de ambiente novas.
  */
 
-const CHECK_ACCESS_URL = "https://programa-active.com/api/public/check-access";
-const GRANT_ACCESS_URL = "https://programa-active.com/api/public/grant-access";
+const CHECK_ACCESS_URL = "https://app-programa.vercel.app/api/public/check-access";
+const GRANT_ACCESS_URL = "https://app-programa.vercel.app/api/public/grant-access";
 
 function authHeaders(secret: string): Record<string, string> {
   return { "Content-Type": "application/json", Authorization: `Bearer ${secret}` };
