@@ -42,7 +42,7 @@ export function UrlTagsForm({ accountId }: { accountId: string }) {
   const run = async () => {
     if (!status || status.missing === 0) return;
     const ok = window.confirm(
-      `Aplicar os parâmetros em ${status.missing} anúncio(s)? Cada um ganha um criativo novo e volta para revisão da Meta (pode pausar a entrega por alguns minutos).`,
+      `Atualizar ${status.missing} anúncio(s)? Cada um ganha um criativo novo e volta para revisão da Meta (pode pausar a entrega por alguns minutos).`,
     );
     if (!ok) return;
 
@@ -78,7 +78,7 @@ export function UrlTagsForm({ accountId }: { accountId: string }) {
   return (
     <div className="space-y-4 p-5">
       <p className="text-sm text-muted-foreground">
-        Coloca nos anúncios que já existem nesta conta os mesmos parâmetros que os anúncios novos recebem:
+        Deixa os anúncios que já existem nesta conta no mesmo padrão dos novos: “vários anunciantes” desmarcado e estes parâmetros de URL:
       </p>
       <code className="block break-all rounded-xl border border-border p-3 font-mono text-xs">
         {DEFAULT_URL_TAGS}
@@ -95,8 +95,8 @@ export function UrlTagsForm({ accountId }: { accountId: string }) {
       ) : status ? (
         <p className="text-sm">
           {status.missing === 0
-            ? `Todos os ${status.total} anúncio(s) já estão com os parâmetros.`
-            : `${status.missing} de ${status.total} anúncio(s) ainda sem os parâmetros.`}
+            ? `Todos os ${status.total} anúncio(s) já estão no padrão.`
+            : `${status.missing} de ${status.total} anúncio(s) ainda fora do padrão.`}
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">Contando os anúncios da conta…</p>

@@ -26,3 +26,9 @@ export const CTA_IDS: string[] = CTA_OPTIONS.map((c) => c.id);
  */
 export const DEFAULT_URL_TAGS =
   "utm_source=Facebook&utm_campaign={{campaign.name}}|{{campaign.id}}&utm_medium={{adset.name}}|{{adset.id}}&utm_content={{ad.name}}|{{ad.id}}&utm_term={{placement}}";
+
+/**
+ * "Anúncios com vários anunciantes" DESMARCADO em todo criativo criado pelo
+ * painel (a Meta deixa marcado por padrão).
+ */
+export const MULTI_ADVERTISER_OPT_OUT = { enroll_status: "OPT_OUT" } as const;

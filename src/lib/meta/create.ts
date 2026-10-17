@@ -2,7 +2,7 @@ import "server-only";
 
 import { getAdAccounts, type AdAccount } from "./client";
 import { META_GRAPH_BASE } from "./config";
-import { DEFAULT_URL_TAGS, type CampaignGoal } from "./create-config";
+import { DEFAULT_URL_TAGS, MULTI_ADVERTISER_OPT_OUT, type CampaignGoal } from "./create-config";
 
 /**
  * CRIAÇÃO de campanhas na Marketing API (campanha → conjunto → criativo → anúncio)
@@ -349,6 +349,7 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
         name: item.adName,
         object_story_spec: { page_id: input.pageId, link_data: linkData },
         url_tags: DEFAULT_URL_TAGS,
+        contextual_multi_ads: MULTI_ADVERTISER_OPT_OUT,
       });
       if (!creative.ok) return fail(label, creative.error);
 
@@ -445,6 +446,7 @@ type ExistingCreative = {
   object_story_id?: string;
   effective_object_story_id?: string;
   asset_feed_spec?: Record<string, unknown>;
+  contextual_multi_ads?: { enroll_status?: string };
 };
 
 type ExistingAd = {
@@ -465,13 +467,26 @@ export type UrlTagsBatchResult =
     }
   | { ok: false; error: string };
 
+/** Anúncio fora do padrão: sem os parâmetros de URL ou com "vários anunciantes" marcado. */
+function needsStandard(ad: ExistingAd, urlTags: string): boolean {
+  if (ad.creative?.url_tags !== urlTags) return true;
+  // Só conta quando a Meta devolve o campo — sem ele, não dá pra saber e não
+  // recriamos à toa (senão o mesmo anúncio voltaria pra revisão toda vez).
+  const status = ad.creative?.contextual_multi_ads?.enroll_status;
+  return status !== undefined && status !== MULTI_ADVERTISER_OPT_OUT.enroll_status;
+}
+
 async function listAdsWithCreatives(actId: string, token: string) {
-  return graphGetAll<ExistingAd>(`${actId}/ads`, token, {
-    fields:
-      "id,name,effective_status,creative{id,url_tags,object_story_spec,object_story_id,effective_object_story_id,asset_feed_spec}",
-    effective_status: JSON.stringify(["ACTIVE", "PAUSED", "PENDING_REVIEW", "WITH_ISSUES", "IN_PROCESS"]),
-    limit: "100",
-  });
+  const base = "id,url_tags,object_story_spec,object_story_id,effective_object_story_id,asset_feed_spec";
+  const list = (creativeFields: string) =>
+    graphGetAll<ExistingAd>(`${actId}/ads`, token, {
+      fields: `id,name,effective_status,creative{${creativeFields}}`,
+      effective_status: JSON.stringify(["ACTIVE", "PAUSED", "PENDING_REVIEW", "WITH_ISSUES", "IN_PROCESS"]),
+      limit: "100",
+    });
+  const withMultiAds = await list(`${base},contextual_multi_ads`);
+  // Se a Meta recusar o campo de "vários anunciantes", segue só com os parâmetros.
+  return withMultiAds.ok ? withMultiAds : list(base);
 }
 
 /** Quantos anúncios da conta já têm / ainda não têm os parâmetros. */
@@ -485,7 +500,7 @@ export async function countUrlTagsStatus(
   const ads = await listAdsWithCreatives(resolved.actId, resolved.token);
   if (!ads.ok) return { ok: false, error: ads.error };
   const list = ads.data.data;
-  return { ok: true, total: list.length, missing: list.filter((a) => a.creative?.url_tags !== urlTags).length };
+  return { ok: true, total: list.length, missing: list.filter((a) => needsStandard(a, urlTags)).length };
 }
 
 /**
@@ -513,7 +528,7 @@ export async function applyUrlTagsBatch(
 
   const skipSet = new Set(skip);
   const all = ads.data.data;
-  const pending = all.filter((a) => a.creative?.url_tags !== urlTags && !skipSet.has(a.id));
+  const pending = all.filter((a) => needsStandard(a, urlTags) && !skipSet.has(a.id));
   const batch = pending.slice(0, batchSize);
 
   let updated = 0;
@@ -528,7 +543,11 @@ export async function applyUrlTagsBatch(
 
     // Recria o criativo a partir do que ele já é: post pronto (object_story_id)
     // ou especificação montada (object_story_spec, com ou sem asset_feed_spec).
-    const body: Record<string, unknown> = { name: `${ad.name} · utm`, url_tags: urlTags };
+    const body: Record<string, unknown> = {
+      name: `${ad.name} · utm`,
+      url_tags: urlTags,
+      contextual_multi_ads: MULTI_ADVERTISER_OPT_OUT,
+    };
     if (current.object_story_spec) {
       body.object_story_spec = current.object_story_spec;
       if (current.asset_feed_spec) body.asset_feed_spec = current.asset_feed_spec;

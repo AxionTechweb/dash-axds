@@ -317,7 +317,7 @@ function CreateCampaignFormInner({
           </p>
         </div>
         <p className="text-xs text-muted-foreground">
-          Todos os anúncios saem com os parâmetros de URL:{" "}
+          Todos os anúncios saem com “vários anunciantes” desmarcado e os parâmetros de URL:{" "}
           <code className="break-all font-mono text-[0.68rem]">{DEFAULT_URL_TAGS}</code>
         </p>
 
