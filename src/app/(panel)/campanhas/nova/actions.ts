@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 
 import { getActiveArea } from "@/lib/areas";
 import { getCurrentUser } from "@/lib/auth";
-import { CTA_IDS, GOAL_OPTIONS, type CampaignGoal } from "@/lib/meta/create-config";
+import { CTA_IDS, DEFAULT_URL_TAGS, GOAL_OPTIONS, type CampaignGoal } from "@/lib/meta/create-config";
 import {
+  applyUrlTagsBatch,
+  countUrlTagsStatus,
   createCampaign,
   duplicateCampaign,
   uploadAdImage,
@@ -265,4 +267,45 @@ export async function duplicateCampaignAction(
     ok: `${active ? "Cópia criada e ATIVA" : "Cópia criada PAUSADA"}.${result.warning ? ` Atenção: ${result.warning}.` : ""}`,
     campaignId: result.campaignId,
   };
+}
+
+/* ------------------------------------------- parâmetros de URL nos existentes */
+
+export type UrlTagsStatus = { total?: number; missing?: number; error?: string };
+
+export async function urlTagsStatusAction(accountId: string): Promise<UrlTagsStatus> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+  const result = await countUrlTagsStatus(ctx.area.id, accountId, DEFAULT_URL_TAGS);
+  if (!result.ok) return { error: result.error };
+  return { total: result.total, missing: result.missing };
+}
+
+export type UrlTagsBatchState = {
+  error?: string;
+  updated?: number;
+  failed?: { adId: string; name: string; error: string }[];
+  remaining?: number;
+};
+
+/** Um lote (até 15 anúncios) — a tela chama de novo até remaining = 0. */
+export async function applyUrlTagsBatchAction(
+  accountId: string,
+  skip: string[],
+): Promise<UrlTagsBatchState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const result = await applyUrlTagsBatch(ctx.area.id, accountId, DEFAULT_URL_TAGS, 15, skip.slice(0, 2000));
+  if (!result.ok) return { error: result.error };
+
+  if (result.updated > 0 || result.failed.length > 0) {
+    await audit(ctx.area.id, ctx.user.email, "meta.apply_url_tags", null, {
+      updated: result.updated,
+      failed: result.failed.map((f) => f.adId),
+    });
+  }
+  if (result.updated > 0) revalidatePath("/campanhas");
+
+  return { updated: result.updated, failed: result.failed, remaining: result.remaining };
 }

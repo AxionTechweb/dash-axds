@@ -8,6 +8,7 @@ import { loadAccountAssets } from "@/lib/meta/create";
 import { cn } from "@/lib/utils";
 
 import { CreateCampaignForm, DuplicateCampaignForm } from "./campaign-forms";
+import { UrlTagsForm } from "./url-tags-form";
 
 export const metadata: Metadata = { title: "Nova campanha" };
 export const dynamic = "force-dynamic";
@@ -48,7 +49,8 @@ export default async function NovaCampanhaPage({
   }
 
   const account = accounts.find((a) => a.id === params.account) ?? accounts[0];
-  const mode = params.mode === "duplicar" ? "duplicar" : "criar";
+  const mode =
+    params.mode === "duplicar" ? "duplicar" : params.mode === "parametros" ? "parametros" : "criar";
   const assets = await loadAccountAssets(activeArea.id, account.id);
 
   const href = (next: Partial<SearchParams>) => {
@@ -67,6 +69,7 @@ export default async function NovaCampanhaPage({
             [
               { id: "criar", label: "Criar do zero" },
               { id: "duplicar", label: "Duplicar existente" },
+              { id: "parametros", label: "Parâmetros de URL" },
             ] as const
           ).map((item) => (
             <Link
@@ -116,10 +119,17 @@ export default async function NovaCampanhaPage({
 
       <Card>
         <CardHeader>
-          <CardLabel>{mode === "criar" ? "Nova campanha" : "Duplicar campanha"}</CardLabel>
-          <span className="micro-label">{account.label} · criada pausada por padrão</span>
+          <CardLabel>
+            {mode === "criar" ? "Nova campanha" : mode === "duplicar" ? "Duplicar campanha" : "Parâmetros de URL nos anúncios existentes"}
+          </CardLabel>
+          <span className="micro-label">
+            {account.label}
+            {mode === "parametros" ? "" : " · criada pausada por padrão"}
+          </span>
         </CardHeader>
-        {mode === "criar" ? (
+        {mode === "parametros" ? (
+          <UrlTagsForm accountId={account.id} />
+        ) : mode === "criar" ? (
           <CreateCampaignForm
             accountId={account.id}
             currency={assets.currency}

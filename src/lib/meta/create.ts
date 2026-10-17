@@ -435,3 +435,130 @@ export async function duplicateCampaign(input: {
     warning: warnings.length > 0 ? warnings.join("; ") : null,
   };
 }
+
+/* ------------------------------------------------- parâmetros de URL em massa */
+
+type ExistingCreative = {
+  id: string;
+  url_tags?: string;
+  object_story_spec?: Record<string, unknown>;
+  object_story_id?: string;
+  effective_object_story_id?: string;
+  asset_feed_spec?: Record<string, unknown>;
+};
+
+type ExistingAd = {
+  id: string;
+  name: string;
+  effective_status: string;
+  creative?: ExistingCreative;
+};
+
+export type UrlTagsBatchResult =
+  | {
+      ok: true;
+      updated: number;
+      failed: { adId: string; name: string; error: string }[];
+      /** Anúncios que ainda estão sem os parâmetros (fora os que falharam). */
+      remaining: number;
+      alreadyOk: number;
+    }
+  | { ok: false; error: string };
+
+async function listAdsWithCreatives(actId: string, token: string) {
+  return graphGetAll<ExistingAd>(`${actId}/ads`, token, {
+    fields:
+      "id,name,effective_status,creative{id,url_tags,object_story_spec,object_story_id,effective_object_story_id,asset_feed_spec}",
+    effective_status: JSON.stringify(["ACTIVE", "PAUSED", "PENDING_REVIEW", "WITH_ISSUES", "IN_PROCESS"]),
+    limit: "100",
+  });
+}
+
+/** Quantos anúncios da conta já têm / ainda não têm os parâmetros. */
+export async function countUrlTagsStatus(
+  areaId: string,
+  accountRowId: string,
+  urlTags: string,
+): Promise<{ ok: true; total: number; missing: number } | { ok: false; error: string }> {
+  const resolved = await resolveAccount(areaId, accountRowId);
+  if ("error" in resolved) return { ok: false, error: resolved.error };
+  const ads = await listAdsWithCreatives(resolved.actId, resolved.token);
+  if (!ads.ok) return { ok: false, error: ads.error };
+  const list = ads.data.data;
+  return { ok: true, total: list.length, missing: list.filter((a) => a.creative?.url_tags !== urlTags).length };
+}
+
+/**
+ * Aplica `urlTags` nos anúncios existentes que ainda não têm. A Meta não deixa
+ * editar criativo, então para cada anúncio: cria um criativo novo igual ao
+ * atual + url_tags e troca o criativo do anúncio (vai para nova revisão).
+ *
+ * Processa até `batchSize` por chamada para caber no tempo da função; a tela
+ * chama de novo até `remaining` zerar. `skip` = ids que já falharam nesta
+ * rodada, para não tentar de novo em loop.
+ */
+export async function applyUrlTagsBatch(
+  areaId: string,
+  accountRowId: string,
+  urlTags: string,
+  batchSize: number,
+  skip: string[],
+): Promise<UrlTagsBatchResult> {
+  const resolved = await resolveAccount(areaId, accountRowId);
+  if ("error" in resolved) return { ok: false, error: resolved.error };
+  const { token, actId } = resolved;
+
+  const ads = await listAdsWithCreatives(actId, token);
+  if (!ads.ok) return { ok: false, error: ads.error };
+
+  const skipSet = new Set(skip);
+  const all = ads.data.data;
+  const pending = all.filter((a) => a.creative?.url_tags !== urlTags && !skipSet.has(a.id));
+  const batch = pending.slice(0, batchSize);
+
+  let updated = 0;
+  const failed: { adId: string; name: string; error: string }[] = [];
+
+  for (const ad of batch) {
+    const current = ad.creative;
+    if (!current) {
+      failed.push({ adId: ad.id, name: ad.name, error: "anúncio sem criativo legível" });
+      continue;
+    }
+
+    // Recria o criativo a partir do que ele já é: post pronto (object_story_id)
+    // ou especificação montada (object_story_spec, com ou sem asset_feed_spec).
+    const body: Record<string, unknown> = { name: `${ad.name} · utm`, url_tags: urlTags };
+    if (current.object_story_spec) {
+      body.object_story_spec = current.object_story_spec;
+      if (current.asset_feed_spec) body.asset_feed_spec = current.asset_feed_spec;
+    } else if (current.object_story_id || current.effective_object_story_id) {
+      body.object_story_id = current.object_story_id ?? current.effective_object_story_id;
+    } else {
+      failed.push({ adId: ad.id, name: ad.name, error: "formato de criativo não suportado" });
+      continue;
+    }
+
+    const creative = await graphPost<{ id: string }>(`${actId}/adcreatives`, token, body);
+    if (!creative.ok) {
+      failed.push({ adId: ad.id, name: ad.name, error: creative.error });
+      continue;
+    }
+
+    const swap = await graphPost(ad.id, token, { creative: { creative_id: creative.data.id } });
+    if (!swap.ok) {
+      await graphDelete(creative.data.id, token);
+      failed.push({ adId: ad.id, name: ad.name, error: swap.error });
+      continue;
+    }
+    updated += 1;
+  }
+
+  return {
+    ok: true,
+    updated,
+    failed,
+    remaining: pending.length - batch.length,
+    alreadyOk: all.length - pending.length - skipSet.size,
+  };
+}
