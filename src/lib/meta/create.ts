@@ -205,7 +205,7 @@ export type CreateCampaignInput = {
   accountRowId: string;
   goal: CampaignGoal;
   campaignName: string;
-  /** Orçamento diário em unidade de moeda (convertido para centavos aqui). */
+  /** Orçamento diário da CAMPANHA (CBO), em unidade de moeda (convertido para centavos aqui). */
   dailyBudget: number;
   /** true = cria já ATIVA; false = PAUSADA. */
   active: boolean;
@@ -261,8 +261,10 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
     status,
     special_ad_categories: [],
     buying_type: "AUCTION",
-    // Orçamento fica no conjunto (não é CBO): a Meta exige declarar isso.
-    is_adset_budget_sharing_enabled: false,
+    // Sempre CBO (orçamento de campanha Advantage+): o orçamento e a estratégia
+    // de lance ficam na campanha, e a Meta distribui entre os conjuntos.
+    daily_budget: String(Math.round(input.dailyBudget * 100)),
+    bid_strategy: "LOWEST_COST_WITHOUT_CAP",
   });
   if (!campaign.ok) return { ok: false, error: `Campanha: ${campaign.error}` };
   const campaignId = campaign.data.id;
@@ -285,9 +287,8 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
   const adSetBody: Record<string, unknown> = {
     name: input.campaignName,
     campaign_id: campaignId,
-    daily_budget: String(Math.round(input.dailyBudget * 100)),
+    // Sem orçamento nem lance aqui: vêm da campanha (CBO).
     billing_event: "IMPRESSIONS",
-    bid_strategy: "LOWEST_COST_WITHOUT_CAP",
     targeting,
     status,
   };

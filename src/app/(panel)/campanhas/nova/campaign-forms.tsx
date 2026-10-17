@@ -242,7 +242,7 @@ function CreateCampaignFormInner({
           <Input id="c-name" name="name" maxLength={150} required />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="c-budget">Orçamento diário{currency ? ` (${currency})` : ""}</Label>
+          <Label htmlFor="c-budget">Orçamento diário da campanha (CBO){currency ? ` (${currency})` : ""}</Label>
           <Input id="c-budget" name="dailyBudget" inputMode="decimal" placeholder="50,00" required />
         </div>
       </div>
