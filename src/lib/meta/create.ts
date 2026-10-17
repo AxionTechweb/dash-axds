@@ -2,7 +2,7 @@ import "server-only";
 
 import { getAdAccounts, type AdAccount } from "./client";
 import { META_GRAPH_BASE } from "./config";
-import type { CampaignGoal } from "./create-config";
+import { DEFAULT_URL_TAGS, type CampaignGoal } from "./create-config";
 
 /**
  * CRIAÇÃO de campanhas na Marketing API (campanha → conjunto → criativo → anúncio)
@@ -348,6 +348,7 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
       const creative = await graphPost<{ id: string }>(`${actId}/adcreatives`, token, {
         name: item.adName,
         object_story_spec: { page_id: input.pageId, link_data: linkData },
+        url_tags: DEFAULT_URL_TAGS,
       });
       if (!creative.ok) return fail(label, creative.error);
 

@@ -17,3 +17,12 @@ export const CTA_OPTIONS = [
 ] as const;
 
 export const CTA_IDS: string[] = CTA_OPTIONS.map((c) => c.id);
+
+/**
+ * Parâmetros de URL aplicados em TODO anúncio criado pelo painel (campo
+ * `url_tags` do criativo). A Meta troca as macros {{...}} no clique. O
+ * utm_content termina no {{ad.id}}, que o webhook de compra extrai pelo último
+ * pedaço numérico — é o que liga a venda ao anúncio.
+ */
+export const DEFAULT_URL_TAGS =
+  "utm_source=Facebook&utm_campaign={{campaign.name}}|{{campaign.id}}&utm_medium={{adset.name}}|{{adset.id}}&utm_content={{ad.name}}|{{ad.id}}&utm_term={{placement}}";

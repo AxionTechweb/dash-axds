@@ -6,7 +6,12 @@ import { useActionState, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
-import { CTA_OPTIONS, GOAL_OPTIONS, type CampaignGoal } from "@/lib/meta/create-config";
+import {
+  CTA_OPTIONS,
+  DEFAULT_URL_TAGS,
+  GOAL_OPTIONS,
+  type CampaignGoal,
+} from "@/lib/meta/create-config";
 
 import {
   createCampaignAction,
@@ -311,6 +316,10 @@ function CreateCampaignFormInner({
             Cada criativo vira um anúncio. Acima de 50, a campanha ganha conjuntos extras (limite da Meta por conjunto).
           </p>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Todos os anúncios saem com os parâmetros de URL:{" "}
+          <code className="break-all font-mono text-[0.68rem]">{DEFAULT_URL_TAGS}</code>
+        </p>
 
         {creatives.map((item, index) => (
           <div key={item.key} className="space-y-3 rounded-xl border border-border p-4">
