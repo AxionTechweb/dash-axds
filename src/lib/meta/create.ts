@@ -236,7 +236,14 @@ export type CreativeInput = {
 export const MAX_ADS_PER_ADSET = 50;
 
 export type CreateCampaignResult =
-  | { ok: true; campaignId: string; adSetIds: string[]; adIds: string[] }
+  | {
+      ok: true;
+      campaignId: string;
+      adSetIds: string[];
+      adIds: string[];
+      /** Criativos que deram erro e ficaram de fora (os outros foram criados). */
+      skipped: { name: string; error: string }[];
+    }
   | { ok: false; error: string };
 
 export async function createCampaign(input: CreateCampaignInput): Promise<CreateCampaignResult> {
@@ -319,6 +326,9 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
   const isWhatsapp = goal === "whatsapp";
   const adSetIds: string[] = [];
   const adIds: string[] = [];
+  // Criativo com erro é PULADO e informado — um erro no criativo 40 de 50 não
+  // pode apagar os outros 49. Só desfaz tudo se nenhum anúncio sair.
+  const skipped: { name: string; error: string }[] = [];
 
   // Fatias de até 50 criativos: cada fatia vira um conjunto com seus anúncios.
   for (let start = 0; start < input.creatives.length; start += MAX_ADS_PER_ADSET) {
@@ -329,8 +339,13 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
       ...adSetBody,
       name: setNumber === 1 ? input.campaignName : `${input.campaignName} #${setNumber}`,
     });
-    if (!adSet.ok) return fail(`Conjunto ${setNumber}`, adSet.error);
-    adSetIds.push(adSet.data.id);
+    if (!adSet.ok) {
+      // Erro de configuração (pixel, público...) no 1º conjunto vale pra todos.
+      if (setNumber === 1) return fail("Conjunto", adSet.error);
+      chunk.forEach((item) => skipped.push({ name: item.adName, error: `conjunto ${setNumber}: ${adSet.error}` }));
+      continue;
+    }
+    const adsBefore = adIds.length;
 
     for (const [offset, item] of chunk.entries()) {
       const label = `Criativo ${start + offset + 1} (${item.adName})`;
@@ -352,7 +367,10 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
         url_tags: DEFAULT_URL_TAGS,
         contextual_multi_ads: MULTI_ADVERTISER_OPT_OUT,
       });
-      if (!creative.ok) return fail(label, creative.error);
+      if (!creative.ok) {
+        skipped.push({ name: label, error: creative.error });
+        continue;
+      }
 
       // 4) Anúncio
       const ad = await graphPost<{ id: string }>(`${actId}/ads`, token, {
@@ -361,12 +379,25 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
         creative: { creative_id: creative.data.id },
         status,
       });
-      if (!ad.ok) return fail(label, ad.error);
+      if (!ad.ok) {
+        await graphDelete(creative.data.id, token);
+        skipped.push({ name: label, error: ad.error });
+        continue;
+      }
       adIds.push(ad.data.id);
     }
+
+    // Conjunto que ficou sem nenhum anúncio não fica pendurado na conta.
+    if (adIds.length === adsBefore) await graphDelete(adSet.data.id, token);
+    else adSetIds.push(adSet.data.id);
   }
 
-  return { ok: true, campaignId, adSetIds, adIds };
+  if (adIds.length === 0) {
+    const first = skipped[0];
+    return fail(first ? first.name : "Anúncio", first ? first.error : "nenhum anúncio criado");
+  }
+
+  return { ok: true, campaignId, adSetIds, adIds, skipped };
 }
 
 /* ------------------------------------------------------------------ duplicar */
@@ -388,17 +419,81 @@ export async function duplicateCampaign(input: {
   if ("error" in resolved) return { ok: false, error: resolved.error };
   const { token } = resolved;
 
-  const copy = await graphPost<{ copied_campaign_id?: string; ad_object_ids?: { copied_id?: string }[] }>(
-    `${input.sourceCampaignId}/copies`,
-    token,
-    { deep_copy: true, status_option: input.active ? "ACTIVE" : "PAUSED" },
-  );
-  if (!copy.ok) return { ok: false, error: `Duplicação: ${copy.error}` };
-
-  const newId = copy.data.copied_campaign_id ?? copy.data.ad_object_ids?.[0]?.copied_id;
-  if (!newId) return { ok: false, error: "A Meta não devolveu o ID da cópia." };
-
+  const statusOption = input.active ? "ACTIVE" : "PAUSED";
   const warnings: string[] = [];
+
+  type CopyResponse = {
+    copied_campaign_id?: string;
+    copied_adset_id?: string;
+    copied_ad_id?: string;
+    ad_object_ids?: { copied_id?: string }[];
+  };
+
+  // 1ª tentativa: cópia profunda numa chamada só. A Meta só faz isso de forma
+  // síncrona para campanhas pequenas (poucos conjuntos/anúncios).
+  let newId: string | undefined;
+  const deep = await graphPost<CopyResponse>(`${input.sourceCampaignId}/copies`, token, {
+    deep_copy: true,
+    status_option: statusOption,
+  });
+
+  if (deep.ok) {
+    newId = deep.data.copied_campaign_id ?? deep.data.ad_object_ids?.[0]?.copied_id;
+  } else {
+    // 2ª: copia em partes — campanha, cada conjunto e cada anúncio, um por vez.
+    const shallow = await graphPost<CopyResponse>(`${input.sourceCampaignId}/copies`, token, {
+      deep_copy: false,
+      status_option: statusOption,
+    });
+    if (!shallow.ok) return { ok: false, error: `Duplicação: ${deep.error}` };
+    newId = shallow.data.copied_campaign_id ?? shallow.data.ad_object_ids?.[0]?.copied_id;
+    if (!newId) return { ok: false, error: "A Meta não devolveu o ID da cópia." };
+
+    const states = JSON.stringify(["ACTIVE", "PAUSED"]);
+    const sets = await graphGetAll<{ id: string; name: string }>(`${input.sourceCampaignId}/adsets`, token, {
+      fields: "id,name",
+      effective_status: states,
+      limit: "100",
+    });
+    if (!sets.ok) warnings.push(`conjuntos não copiados (${sets.error})`);
+
+    let copiedAds = 0;
+    for (const set of sets.ok ? sets.data.data : []) {
+      const setCopy = await graphPost<CopyResponse>(`${set.id}/copies`, token, {
+        campaign_id: newId,
+        deep_copy: false,
+        status_option: statusOption,
+      });
+      const newSetId = setCopy.ok
+        ? (setCopy.data.copied_adset_id ?? setCopy.data.ad_object_ids?.[0]?.copied_id)
+        : undefined;
+      if (!newSetId) {
+        warnings.push(`conjunto "${set.name}" não copiado (${setCopy.ok ? "sem ID" : setCopy.error})`);
+        continue;
+      }
+
+      const ads = await graphGetAll<{ id: string; name: string }>(`${set.id}/ads`, token, {
+        fields: "id,name",
+        effective_status: states,
+        limit: "100",
+      });
+      if (!ads.ok) {
+        warnings.push(`anúncios do conjunto "${set.name}" não copiados (${ads.error})`);
+        continue;
+      }
+      for (const ad of ads.data.data) {
+        const adCopy = await graphPost(`${ad.id}/copies`, token, {
+          adset_id: newSetId,
+          status_option: statusOption,
+        });
+        if (adCopy.ok) copiedAds += 1;
+        else warnings.push(`anúncio "${ad.name}" não copiado (${adCopy.error})`);
+      }
+    }
+    if (copiedAds === 0) warnings.push("nenhum anúncio foi copiado — confira a cópia na Meta");
+  }
+
+  if (!newId) return { ok: false, error: "A Meta não devolveu o ID da cópia." };
 
   const rename = await graphPost(`${newId}`, token, { name: input.newName });
   if (!rename.ok) warnings.push(`não consegui renomear (${rename.error})`);

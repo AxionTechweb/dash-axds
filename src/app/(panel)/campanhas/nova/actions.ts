@@ -183,10 +183,17 @@ export async function createCampaignAction(
 
   revalidatePath("/campanhas");
   const summary = `${result.adIds.length} anúncio(s)${result.adSetIds.length > 1 ? ` em ${result.adSetIds.length} conjuntos` : ""}`;
+  const skippedNote = result.skipped.length
+    ? ` Ficaram de fora ${result.skipped.length} criativo(s) com erro: ${result.skipped
+        .slice(0, 5)
+        .map((s) => `${s.name} (${s.error})`)
+        .join("; ")}${result.skipped.length > 5 ? "…" : ""}.`
+    : "";
   return {
-    ok: active
-      ? `Campanha criada e ATIVA com ${summary} (a Meta ainda analisa os anúncios antes de entregar).`
-      : `Campanha criada PAUSADA com ${summary}. Revise e ative em Campanhas.`,
+    ok:
+      (active
+        ? `Campanha criada e ATIVA com ${summary} (a Meta ainda analisa os anúncios antes de entregar).`
+        : `Campanha criada PAUSADA com ${summary}. Revise e ative em Campanhas.`) + skippedNote,
     campaignId: result.campaignId,
   };
 }
