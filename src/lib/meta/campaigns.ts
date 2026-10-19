@@ -83,28 +83,44 @@ function centsToAmount(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed / 100 : null;
 }
 
+/** Teto de páginas seguidas (500 itens cada) — protege o tempo da função. */
+const MAX_PAGES = 20;
+
+/**
+ * GET na Graph API seguindo `paging.next` até o fim. Antes parava na 1ª página
+ * (500 itens): conta grande perdia conjuntos/anúncios e as métricas deles.
+ */
 async function metaFetch(
   url: string,
   cacheSeconds: number,
 ): Promise<{ data: unknown[]; error: string | null }> {
+  const all: unknown[] = [];
+  let next: string | null = url;
+
   try {
-    const response = await fetch(url, { next: { revalidate: cacheSeconds } });
+    for (let page = 0; next && page < MAX_PAGES; page++) {
+      const response: Response = await fetch(next, { next: { revalidate: cacheSeconds } });
 
-    if (!response.ok) {
-      const body = (await response.json().catch(() => null)) as {
-        error?: { message?: string };
-      } | null;
-      return {
-        data: [],
-        error: body?.error?.message ?? `HTTP ${response.status}`,
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        const error = body?.error?.message ?? `HTTP ${response.status}`;
+        // Falha numa página seguinte: devolve o que já veio, com o aviso.
+        return { data: all, error };
+      }
+
+      const payload = (await response.json()) as {
+        data?: unknown[];
+        paging?: { next?: string };
       };
+      all.push(...(payload.data ?? []));
+      next = payload.paging?.next ?? null;
     }
-
-    const payload = (await response.json()) as { data?: unknown[] };
-    return { data: payload.data ?? [], error: null };
+    return { data: all, error: null };
   } catch (err) {
     return {
-      data: [],
+      data: all,
       error: err instanceof Error ? err.message : "falha na requisição",
     };
   }
@@ -143,10 +159,14 @@ async function fetchEntities(
 ) {
   // No nível "ad", pede a miniatura do criativo via expansão de campo —
   // vem na MESMA chamada (sem round-trip extra), usada no card de /criativos.
+  // campaign_id/adset_id vêm junto: sem eles, conjunto ou anúncio SEM gasto no
+  // período (ex.: recém-criado) ficava sem campanha-mãe e sumia do drill-down.
   const fields =
     level === "ad"
-      ? "id,name,status,effective_status,creative{thumbnail_url}"
-      : "id,name,status,effective_status,daily_budget,lifetime_budget";
+      ? "id,name,status,effective_status,campaign_id,adset_id,creative{thumbnail_url}"
+      : level === "adset"
+        ? "id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget"
+        : "id,name,status,effective_status,daily_budget,lifetime_budget";
 
   const params = new URLSearchParams({
     fields,
@@ -285,10 +305,14 @@ export async function getMetaEntities(
         const id = entity.id;
         if (typeof id !== "string") continue;
 
+        const parentCampaign =
+          typeof entity.campaign_id === "string" ? entity.campaign_id : null;
+        const parentAdset = typeof entity.adset_id === "string" ? entity.adset_id : null;
+
         const metrics = aggregated.get(id) ?? {
           campaignName: null,
-          campaignId: level === "campaign" ? id : null,
-          adsetId: level === "adset" ? id : null,
+          campaignId: level === "campaign" ? id : parentCampaign,
+          adsetId: level === "adset" ? id : parentAdset,
           spend: 0,
           impressions: 0,
           clicks: 0,

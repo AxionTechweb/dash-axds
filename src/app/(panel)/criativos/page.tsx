@@ -58,8 +58,15 @@ export default async function CriativosPage({
     getAccountOptions(activeArea.id),
   ]);
 
+  // Com entrega no período OU ativo na Meta — senão anúncio recém-criado (em
+  // revisão, ainda sem impressão) não aparecia. Pausado sem entrega fica fora.
   const activeAds = metaResult.rows.filter(
-    (entity) => entity.spend > 0 || entity.impressions > 0,
+    (entity) =>
+      entity.spend > 0 ||
+      entity.impressions > 0 ||
+      ["ACTIVE", "PENDING_REVIEW", "IN_PROCESS", "WITH_ISSUES"].includes(
+        (entity.effectiveStatus || entity.status).toUpperCase(),
+      ),
   );
 
   // Autocomplete da busca — nomes de TODOS os criativos ativos no período,
