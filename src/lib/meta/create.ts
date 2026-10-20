@@ -2,7 +2,13 @@ import "server-only";
 
 import { getAdAccounts, type AdAccount } from "./client";
 import { META_GRAPH_BASE } from "./config";
-import { DEFAULT_URL_TAGS, MULTI_ADVERTISER_OPT_OUT, type CampaignGoal } from "./create-config";
+import {
+  DEFAULT_URL_TAGS,
+  MULTI_ADVERTISER_OPT_OUT,
+  messageDestinationType,
+  type CampaignGoal,
+  type MessageDestination,
+} from "./create-config";
 
 /**
  * CRIAÇÃO de campanhas na Marketing API (campanha → conjunto → criativo → anúncio)
@@ -116,7 +122,8 @@ async function graphDelete(id: string, token: string): Promise<void> {
 /* ------------------------------------------------------------ ativos da conta */
 
 export type AccountAssets = {
-  pages: { id: string; name: string }[];
+  /** instagram = conta do IG ligada à página (destino Instagram Direct). */
+  pages: { id: string; name: string; instagram: { id: string; username: string | null } | null }[];
   pixels: { id: string; name: string }[];
   campaigns: { id: string; name: string; status: string; dailyBudget: number | null }[];
   currency: string | null;
@@ -135,11 +142,24 @@ export async function loadAccountAssets(
   const { token, actId, account } = resolved;
   type Edge<T> = { data?: T[] };
 
-  const [pages, pixels, campaigns] = await Promise.all([
-    graphGet<Edge<{ id: string; name: string }>>(`${actId}/promote_pages`, token, {
-      fields: "id,name",
+  type PageEdge = Edge<{
+    id: string;
+    name: string;
+    instagram_business_account?: { id: string; username?: string };
+  }>;
+  // Com a conta do Instagram de cada página; se o token não puder ler o IG,
+  // cai para só id/nome (senão a lista de páginas inteira sumiria).
+  const loadPages = async () => {
+    const withIg = await graphGet<PageEdge>(`${actId}/promote_pages`, token, {
+      fields: "id,name,instagram_business_account{id,username}",
       limit: "100",
-    }),
+    });
+    if (withIg.ok) return withIg;
+    return graphGet<PageEdge>(`${actId}/promote_pages`, token, { fields: "id,name", limit: "100" });
+  };
+
+  const [pages, pixels, campaigns] = await Promise.all([
+    loadPages(),
     graphGet<Edge<{ id: string; name: string }>>(`${actId}/adspixels`, token, {
       fields: "id,name",
       limit: "100",
@@ -158,7 +178,15 @@ export async function loadAccountAssets(
   const errors = [pages, pixels, campaigns].flatMap((r) => (r.ok ? [] : [r.error]));
 
   return {
-    pages: pages.ok ? (pages.data.data ?? []) : [],
+    pages: pages.ok
+      ? (pages.data.data ?? []).map((p) => ({
+          id: p.id,
+          name: p.name,
+          instagram: p.instagram_business_account
+            ? { id: p.instagram_business_account.id, username: p.instagram_business_account.username ?? null }
+            : null,
+        }))
+      : [],
     pixels: pixels.ok ? (pixels.data.data ?? []) : [],
     campaigns: campaigns.ok
       ? (campaigns.data.data ?? []).map((c) => ({
@@ -212,6 +240,12 @@ export type CreateCampaignInput = {
   pageId: string;
   pixelId: string | null;
   whatsappNumber: string | null;
+  /** Objetivo "Mensagens": para onde a conversa vai (1 ou mais). */
+  messageDestinations: MessageDestination[];
+  /** Só Vendas: "messages" = conversão em app de mensagens em vez do site. */
+  conversionLocation: "website" | "messages";
+  /** Conta do Instagram ligada à página — obrigatória se Instagram é destino. */
+  instagramUserId: string | null;
   link: string | null;
   countries: string[];
   ageMin: number;
@@ -300,7 +334,10 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
     status,
   };
 
-  if (goal === "sales" || goal === "leads") {
+  // Mensagens, ou Vendas com conversão em app de mensagens.
+  const usesMessages = goal === "whatsapp" || (goal === "sales" && input.conversionLocation === "messages");
+
+  if (!usesMessages && (goal === "sales" || goal === "leads")) {
     if (!input.pixelId) return fail("Conjunto", "Escolha o pixel.");
     adSetBody.optimization_goal = "OFFSITE_CONVERSIONS";
     adSetBody.destination_type = "WEBSITE";
@@ -312,18 +349,44 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
     adSetBody.optimization_goal = "LINK_CLICKS";
     adSetBody.destination_type = "WEBSITE";
   } else {
-    if (!input.whatsappNumber) return fail("Conjunto", "Informe o número do WhatsApp.");
+    // Mensagens: destino escolhido (WhatsApp, Messenger, Instagram ou combinação).
+    const dests = input.messageDestinations;
+    const destinationType = messageDestinationType(dests);
+    if (!destinationType) return fail("Conjunto", "Escolha o destino das mensagens.");
+    if (dests.includes("whatsapp") && !input.whatsappNumber) {
+      return fail("Conjunto", "Informe o número do WhatsApp.");
+    }
+    if (dests.includes("instagram") && !input.instagramUserId) {
+      return fail("Conjunto", "A página escolhida não tem Instagram conectado.");
+    }
     adSetBody.optimization_goal = "CONVERSATIONS";
-    adSetBody.destination_type = "WHATSAPP";
+    adSetBody.destination_type = destinationType;
     adSetBody.promoted_object = {
       page_id: input.pageId,
-      whatsapp_phone_number: input.whatsappNumber,
+      ...(dests.includes("whatsapp") ? { whatsapp_phone_number: input.whatsappNumber } : {}),
     };
   }
 
   if (input.creatives.length === 0) return fail("Anúncio", "Adicione ao menos um criativo.");
 
-  const isWhatsapp = goal === "whatsapp";
+  const isMessages = usesMessages;
+  const dests = input.messageDestinations;
+  const onlyWhatsapp = isMessages && dests.length === 1 && dests[0] === "whatsapp";
+  // Botão do anúncio de mensagem: WhatsApp puro mantém o formato que já
+  // funcionava; com Messenger/Instagram vira "Enviar mensagem" (MESSAGE_PAGE),
+  // com o app de destino só quando há um destino só.
+  const singleDest = dests.length === 1 ? dests[0] : null;
+  const messageCta = onlyWhatsapp
+    ? { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } }
+    : {
+        type: "MESSAGE_PAGE",
+        value: singleDest
+          ? { app_destination: singleDest === "instagram" ? "INSTAGRAM_DIRECT" : "MESSENGER" }
+          : {},
+      };
+  const messageLink = dests.includes("whatsapp")
+    ? "https://api.whatsapp.com/send"
+    : "https://fb.com/messenger_doc/";
   const adSetIds: string[] = [];
   const adIds: string[] = [];
   // Criativo com erro é PULADO e informado — um erro no criativo 40 de 50 não
@@ -355,15 +418,20 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
         image_hash: item.imageHash,
         message: item.primaryText,
         name: item.headline,
-        link: isWhatsapp ? "https://api.whatsapp.com/send" : input.link,
-        call_to_action: isWhatsapp
-          ? { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } }
-          : { type: item.cta, value: { link: input.link } },
+        link: isMessages ? messageLink : input.link,
+        call_to_action: isMessages ? messageCta : { type: item.cta, value: { link: input.link } },
       };
 
       const creative = await graphPost<{ id: string }>(`${actId}/adcreatives`, token, {
         name: item.adName,
-        object_story_spec: { page_id: input.pageId, link_data: linkData },
+        object_story_spec: {
+          page_id: input.pageId,
+          link_data: linkData,
+          // Instagram como destino exige a conta do IG no criativo.
+          ...(isMessages && dests.includes("instagram") && input.instagramUserId
+            ? { instagram_user_id: input.instagramUserId }
+            : {}),
+        },
         url_tags: DEFAULT_URL_TAGS,
         contextual_multi_ads: MULTI_ADVERTISER_OPT_OUT,
       });

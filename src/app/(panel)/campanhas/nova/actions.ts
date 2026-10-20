@@ -4,7 +4,14 @@ import { revalidatePath } from "next/cache";
 
 import { getActiveArea } from "@/lib/areas";
 import { getCurrentUser } from "@/lib/auth";
-import { CTA_IDS, DEFAULT_URL_TAGS, GOAL_OPTIONS, type CampaignGoal } from "@/lib/meta/create-config";
+import {
+  CTA_IDS,
+  DEFAULT_URL_TAGS,
+  GOAL_OPTIONS,
+  MESSAGE_DESTINATIONS,
+  type CampaignGoal,
+  type MessageDestination,
+} from "@/lib/meta/create-config";
 import {
   applyUrlTagsBatch,
   countUrlTagsStatus,
@@ -85,20 +92,41 @@ export async function createCampaignAction(
   if (!/^\d+$/.test(pageId)) return { error: "Escolha a página do Facebook." };
 
   const pixelId = text(formData, "pixelId", 40) || null;
-  if ((goal === "sales" || goal === "leads") && (!pixelId || !/^\d+$/.test(pixelId))) {
+  // Vendas pode converter no site (pixel + link) ou em app de mensagens.
+  const conversionLocation = goal === "sales" && text(formData, "conversionLocation", 20) === "messages" ? "messages" : "website";
+  const usesMessages = goal === "whatsapp" || conversionLocation === "messages";
+
+  if (((goal === "sales" && !usesMessages) || goal === "leads") && (!pixelId || !/^\d+$/.test(pixelId))) {
     return { error: "Escolha o pixel." };
   }
 
   const link = text(formData, "link", 1000) || null;
-  if (goal !== "whatsapp") {
+  if (!usesMessages) {
     if (!link || !/^https:\/\/[^\s]+$/i.test(link)) {
       return { error: "Informe o link de destino começando com https://" };
     }
   }
 
+  const messageDestinations = formData
+    .getAll("messageDest")
+    .map(String)
+    .filter((d): d is MessageDestination => MESSAGE_DESTINATIONS.some((m) => m.id === d));
+  if (usesMessages && messageDestinations.length === 0) {
+    return { error: "Escolha o destino das mensagens (WhatsApp, Messenger e/ou Instagram)." };
+  }
+
   const whatsappNumber = text(formData, "whatsapp", 20).replace(/\D/g, "") || null;
-  if (goal === "whatsapp" && (!whatsappNumber || whatsappNumber.length < 12)) {
+  if (
+    usesMessages &&
+    messageDestinations.includes("whatsapp") &&
+    (!whatsappNumber || whatsappNumber.length < 12)
+  ) {
     return { error: "Informe o WhatsApp com DDI e DDD, ex.: 5511999998888." };
+  }
+
+  const instagramUserId = text(formData, "instagramUserId", 40) || null;
+  if (usesMessages && messageDestinations.includes("instagram") && !/^\d+$/.test(instagramUserId ?? "")) {
+    return { error: "A página escolhida não tem Instagram conectado. Conecte na Meta ou tire o Instagram." };
   }
 
   // Criativos: as imagens já subiram uma a uma (uploadAdImageAction); aqui só
@@ -126,7 +154,7 @@ export async function createCampaignAction(
     if (!/^[a-f0-9]{16,64}$/i.test(imageHash)) return { error: `${label}: envie a imagem.` };
     if (!primaryText) return { error: `${label}: escreva o texto principal.` };
     if (!headline) return { error: `${label}: escreva o título.` };
-    if (goal !== "whatsapp" && !CTA_IDS.includes(cta)) return { error: `${label}: botão inválido.` };
+    if (!usesMessages && !CTA_IDS.includes(cta)) return { error: `${label}: botão inválido.` };
 
     creatives.push({
       imageHash,
@@ -160,7 +188,10 @@ export async function createCampaignAction(
     active,
     pageId,
     pixelId,
-    whatsappNumber,
+    whatsappNumber: messageDestinations.includes("whatsapp") ? whatsappNumber : null,
+    messageDestinations,
+    conversionLocation,
+    instagramUserId: messageDestinations.includes("instagram") ? instagramUserId : null,
     link,
     countries: ["BR"],
     ageMin,

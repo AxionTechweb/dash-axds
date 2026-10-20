@@ -10,6 +10,8 @@ import {
   CTA_OPTIONS,
   DEFAULT_URL_TAGS,
   GOAL_OPTIONS,
+  MESSAGE_DESTINATIONS,
+  type MessageDestination,
   type CampaignGoal,
 } from "@/lib/meta/create-config";
 
@@ -21,6 +23,7 @@ import {
 } from "./actions";
 
 type Option = { id: string; name: string };
+type PageOption = Option & { instagram: { id: string; username: string | null } | null };
 type CampaignOption = { id: string; name: string; status: string; dailyBudget: number | null };
 
 const SELECT_CLASS =
@@ -109,7 +112,7 @@ function newCreative(base?: CreativeDraft, file: File | null = null): CreativeDr
 export function CreateCampaignForm(props: {
   accountId: string;
   currency: string | null;
-  pages: Option[];
+  pages: PageOption[];
   pixels: Option[];
 }) {
   const [round, setRound] = useState(0);
@@ -125,7 +128,7 @@ function CreateCampaignFormInner({
 }: {
   accountId: string;
   currency: string | null;
-  pages: Option[];
+  pages: PageOption[];
   pixels: Option[];
   onAnother: () => void;
 }) {
@@ -136,7 +139,21 @@ function CreateCampaignFormInner({
   const [progress, setProgress] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
-  const needsPixel = goal === "sales" || goal === "leads";
+  // Vendas pode converter no site (pixel + link) ou em app de mensagens.
+  const [conversionLocation, setConversionLocation] = useState<"website" | "messages">("website");
+  const [autoDest, setAutoDest] = useState(true);
+  const [manualDests, setManualDests] = useState<MessageDestination[]>(["whatsapp"]);
+  const [pageId, setPageId] = useState("");
+  const selectedPage = pages.find((p) => p.id === pageId) ?? null;
+  const usesMessages = goal === "whatsapp" || (goal === "sales" && conversionLocation === "messages");
+  // Destino automático = todos os apps disponíveis (Instagram só se a página tiver IG).
+  const dests: MessageDestination[] = autoDest
+    ? (["whatsapp", "messenger", "instagram"] as MessageDestination[]).filter(
+        (d) => d !== "instagram" || Boolean(selectedPage?.instagram),
+      )
+    : manualDests;
+  const setDests = setManualDests;
+  const needsPixel = (goal === "sales" && conversionLocation === "website") || goal === "leads";
   const busy = pending || progress !== null;
 
   const update = (key: number, patch: Partial<CreativeDraft>) =>
@@ -250,7 +267,14 @@ function CreateCampaignFormInner({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="c-page">Página do Facebook</Label>
-          <select id="c-page" name="pageId" className={SELECT_CLASS} required>
+          <select
+            id="c-page"
+            name="pageId"
+            className={SELECT_CLASS}
+            required
+            value={pageId}
+            onChange={(event) => setPageId(event.target.value)}
+          >
             <option value="">Escolha…</option>
             {pages.map((p) => (
               <option key={p.id} value={p.id}>
@@ -274,11 +298,104 @@ function CreateCampaignFormInner({
           </div>
         ) : null}
 
-        {goal === "whatsapp" ? (
+        {goal === "sales" ? (
           <div className="space-y-2">
-            <Label htmlFor="c-wa">WhatsApp (com DDI e DDD)</Label>
-            <Input id="c-wa" name="whatsapp" inputMode="tel" placeholder="5511999998888" required />
+            <Label htmlFor="c-location">Local da conversão</Label>
+            <select
+              id="c-location"
+              name="conversionLocation"
+              className={SELECT_CLASS}
+              value={conversionLocation}
+              onChange={(event) => setConversionLocation(event.target.value as "website" | "messages")}
+            >
+              <option value="website">Site</option>
+              <option value="messages">Destinos das mensagens</option>
+            </select>
           </div>
+        ) : null}
+
+        {usesMessages ? (
+          <>
+            <fieldset className="space-y-2 sm:col-span-2">
+              <Label>Destinos das mensagens</Label>
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  checked={autoDest}
+                  onChange={() => setAutoDest(true)}
+                  className="mt-1 size-4 accent-[hsl(var(--primary))]"
+                />
+                <span>
+                  <span className="block">Destino automático (recomendado)</span>
+                  <span className="block text-xs text-muted-foreground">
+                    A Meta leva cada pessoa para o app de mensagens onde ela mais interage
+                    {selectedPage && !selectedPage.instagram ? " (Instagram fica de fora: a página não tem IG conectado)" : ""}.
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  checked={!autoDest}
+                  onChange={() => setAutoDest(false)}
+                  className="size-4 accent-[hsl(var(--primary))]"
+                />
+                Escolher manualmente
+              </label>
+
+              {autoDest ? (
+                dests.map((d) => <input key={d} type="hidden" name="messageDest" value={d} />)
+              ) : (
+                <div className="flex flex-wrap gap-4 pl-6">
+                  {MESSAGE_DESTINATIONS.map((d) => (
+                    <label key={d.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        name="messageDest"
+                        value={d.id}
+                        checked={dests.includes(d.id)}
+                        onChange={(event) =>
+                          setDests((list) =>
+                            event.target.checked ? [...list, d.id] : list.filter((x) => x !== d.id),
+                          )
+                        }
+                        className="size-4 accent-[hsl(var(--primary))]"
+                      />
+                      {d.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+              {dests.length === 0 ? (
+                <p className="text-xs text-destructive">Escolha pelo menos um destino.</p>
+              ) : null}
+            </fieldset>
+
+            {dests.includes("whatsapp") ? (
+              <div className="space-y-2">
+                <Label htmlFor="c-wa">WhatsApp (com DDI e DDD)</Label>
+                <Input id="c-wa" name="whatsapp" inputMode="tel" placeholder="5511999998888" required />
+              </div>
+            ) : null}
+
+            {dests.includes("instagram") ? (
+              <div className="space-y-2">
+                <Label>Instagram</Label>
+                {selectedPage?.instagram ? (
+                  <p className="flex h-10 items-center text-sm">
+                    @{selectedPage.instagram.username ?? selectedPage.instagram.id}
+                  </p>
+                ) : (
+                  <p className="text-xs text-destructive">
+                    {pageId
+                      ? "Esta página não tem Instagram conectado na Meta."
+                      : "Escolha a página para usar o Instagram dela."}
+                  </p>
+                )}
+                <input type="hidden" name="instagramUserId" value={selectedPage?.instagram?.id ?? ""} />
+              </div>
+            ) : null}
+          </>
         ) : (
           <div className="space-y-2">
             <Label htmlFor="c-link">Link de destino</Label>
@@ -368,7 +485,7 @@ function CreateCampaignFormInner({
                   onChange={(event) => update(item.key, { headline: event.target.value })}
                 />
               </div>
-              {goal !== "whatsapp" ? (
+              {!usesMessages ? (
                 <div className="space-y-2">
                   <Label htmlFor={`c-cta-${item.key}`}>Botão</Label>
                   <select
