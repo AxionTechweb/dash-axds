@@ -71,6 +71,13 @@ function authenticate(
     return provided ? safeEqual(provided, secret) : false;
   }
 
+  if (auth.mode === "query-token") {
+    return (auth.queryParams ?? []).some((name) => {
+      const value = url.searchParams.get(name);
+      return value ? safeEqual(value, secret) : false;
+    });
+  }
+
   // hmac: assinatura do CORPO BRUTO, em header ou query string.
   const candidates = [
     ...(auth.headers ?? []).map((h) => request.headers.get(h)),

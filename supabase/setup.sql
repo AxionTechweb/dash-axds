@@ -1751,6 +1751,54 @@ create trigger set_updated_at
 
 
 -- ---------------------------------------------------------------------
+-- 20261019120000_add_hubla_platform.sql
+-- ---------------------------------------------------------------------
+-- =============================================================================
+-- Adiciona a plataforma Hubla ao checkout
+-- =============================================================================
+-- A lista espelha PLATFORM_IDS em src/lib/checkout/platforms.ts — os dois
+-- precisam andar juntos. Ver a entrada "hubla" no registro para os detalhes
+-- do payload (confirmed: false — estrutura vista na doc oficial
+-- (hubla.gitbook.io/docs/webhooks), ainda sem venda de teste rodada por esta
+-- instalação).
+-- =============================================================================
+
+alter table public.purchases
+  drop constraint if exists purchases_plataforma_check;
+
+alter table public.purchases
+  add constraint purchases_plataforma_check check (
+    plataforma in (
+      'hotmart', 'kiwify', 'kirvano', 'perfectpay', 'ticto', 'cakto', 'greenn', 'payt', 'hubla'
+    )
+  );
+
+-- ---------------------------------------------------------------------
+-- 20261021120000_add_more_checkout_platforms.sql
+-- ---------------------------------------------------------------------
+-- =============================================================================
+-- Adiciona 16 novas plataformas de checkout
+-- =============================================================================
+-- A lista espelha PLATFORM_IDS em src/lib/checkout/platforms.ts — os dois
+-- precisam andar juntos. Todas entram com confirmed: false (estrutura vista
+-- em doc oficial e/ou numa implementação de referência já em produção, mas
+-- ainda sem venda de teste rodada por ESTA instalação). Ver os caveats de
+-- cada entrada do registro para o que falta confirmar.
+-- =============================================================================
+
+alter table public.purchases
+  drop constraint if exists purchases_plataforma_check;
+
+alter table public.purchases
+  add constraint purchases_plataforma_check check (
+    plataforma in (
+      'hotmart', 'kiwify', 'kirvano', 'perfectpay', 'ticto', 'cakto', 'greenn', 'payt', 'hubla',
+      'guru', 'eduzz', 'monetizze', 'mundpay', 'cartpanda', 'ggcheckout', 'lastlink',
+      'wiven', 'frendz', 'herospark', 'kavoo', 'pagtrust', 'assiny', 'yampi', 'wiapy', 'doppus'
+    )
+  );
+
+-- ---------------------------------------------------------------------
 -- Histórico de migrations: faz um futuro `supabase db push` saber que
 -- estas já foram aplicadas, evitando reaplicar tudo por cima.
 -- ---------------------------------------------------------------------
@@ -1788,7 +1836,9 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260901120000', 'umbler_template_clicks'),
   ('20260914120000', 'meta_account_alerts_muted'),
   ('20260918120000', 'support_ai_sessions'),
-  ('20261005120000', 'meta_cloud_dispatch')
+  ('20261005120000', 'meta_cloud_dispatch'),
+  ('20261019120000', 'add_hubla_platform'),
+  ('20261021120000', 'add_more_checkout_platforms')
 on conflict (version) do nothing;
 
 commit;
