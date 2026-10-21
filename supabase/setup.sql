@@ -1751,6 +1751,103 @@ create trigger set_updated_at
 
 
 -- ---------------------------------------------------------------------
+-- 20261001120000_composite_indexes_purchases_events.sql
+-- ---------------------------------------------------------------------
+-- Índices compostos pra acelerar as queries reais de dashboard/vturb/umbler,
+-- que hoje filtram por area_id + status + intervalo de created_at (ou
+-- area_id + event_name + created_at) ao mesmo tempo — só existiam índices de
+-- uma coluna cada, forçando um bitmap-AND (ou scan maior) em vez de um único
+-- index scan.
+--
+-- Sem `concurrently`: o SQL Editor do Supabase roda o script dentro de uma
+-- transação, e `CREATE INDEX CONCURRENTLY` não pode rodar dentro de uma
+-- transação (erro 25001). Como as tabelas não são grandes o bastante pra
+-- doer, um `CREATE INDEX` normal (lock breve de escrita durante a criação)
+-- é aceitável aqui.
+create index if not exists purchases_area_created_idx
+  on public.purchases (area_id, created_at);
+
+create index if not exists purchases_area_status_created_idx
+  on public.purchases (area_id, status, created_at);
+
+create index if not exists events_log_area_event_created_idx
+  on public.events_log (area_id, event_name, created_at);
+
+-- ---------------------------------------------------------------------
+-- 20261017120000_revoke_public_execute.sql
+-- ---------------------------------------------------------------------
+-- Funções novas nascem com EXECUTE para PUBLIC. A 20260820 recriou log_event
+-- (security definer) e revogou só de anon/authenticated — o acesso continuava
+-- vindo via PUBLIC, então qualquer um com a anon key gravava eventos em
+-- qualquer área, sem passar por CORS/rate limit. Só o service_role executa.
+revoke all on function public.log_event(
+  uuid, text, text, text, text, text, text, text, text, text, text, text, text, text, text
+) from public, anon, authenticated;
+grant execute on function public.log_event(
+  uuid, text, text, text, text, text, text, text, text, text, text, text, text, text, text
+) to service_role;
+
+revoke all on function public.identify_visitor(
+  uuid, text, text, text, text, text, text, text, text, text,
+  text, text, text, text, text, text
+) from public, anon, authenticated;
+grant execute on function public.identify_visitor(
+  uuid, text, text, text, text, text, text, text, text, text,
+  text, text, text, text, text, text
+) to service_role;
+
+revoke all on function public.set_updated_at() from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- 20261017120100_dispatch_claimed_at.sql
+-- ---------------------------------------------------------------------
+-- Hora em que o envio começou: permite achar linhas presas em "sending"
+-- (função caiu no meio) sem confundir com linhas antigas recém-pegas.
+alter table public.wa_dispatch_log add column if not exists claimed_at timestamptz;
+
+-- ---------------------------------------------------------------------
+-- 20261017120200_schedule_crons_pg_cron.sql
+-- ---------------------------------------------------------------------
+-- Crons que a Vercel (plano Hobby, 1x/dia) não consegue rodar na frequência
+-- certa passam a ser chamados pelo pg_cron do Supabase, com o mesmo
+-- Authorization: Bearer $CRON_SECRET das rotas.
+--
+-- PRÉ-REQUISITO (não versionado, é segredo): o valor do CRON_SECRET da Vercel
+-- guardado no Vault com o nome 'cron_secret':
+--   select vault.create_secret('<CRON_SECRET>', 'cron_secret');
+-- Trocou o CRON_SECRET na Vercel? Atualize o Vault também:
+--   select vault.update_secret(id, '<novo>') from vault.secrets where name = 'cron_secret';
+
+create extension if not exists pg_cron with schema pg_catalog;
+create extension if not exists pg_net with schema extensions;
+
+create or replace function public.call_panel_cron(p_path text)
+returns bigint
+language sql
+security definer
+set search_path = ''
+as $$
+  select net.http_get(
+    url := 'https://dash-axion.vercel.app' || p_path,
+    headers := jsonb_build_object(
+      'Authorization',
+      'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret')
+    ),
+    timeout_milliseconds := 60000
+  );
+$$;
+revoke all on function public.call_panel_cron(text) from public, anon, authenticated;
+
+-- Disparos com atraso (PIX pendente, abandono, lead): a cada 5 min.
+select cron.schedule('panel-dispatch', '*/5 * * * *', $$select public.call_panel_cron('/api/cron/dispatch')$$);
+-- Avisos (conta desativada, anúncio reprovado, PIX travado, sem venda): a cada 15 min.
+select cron.schedule('panel-alerts', '*/15 * * * *', $$select public.call_panel_cron('/api/cron/alerts')$$);
+-- Checkpoint intradia por campanha: de hora em hora (a rota decide os horários).
+select cron.schedule('panel-daily-campaigns', '2 * * * *', $$select public.call_panel_cron('/api/cron/daily-campaigns')$$);
+-- Regras automáticas: de hora em hora (antes 1x/dia às 06:00 pela Vercel).
+select cron.schedule('panel-rules', '7 * * * *', $$select public.call_panel_cron('/api/cron/rules')$$);
+
+-- ---------------------------------------------------------------------
 -- 20261019120000_add_hubla_platform.sql
 -- ---------------------------------------------------------------------
 -- =============================================================================
@@ -1836,7 +1933,11 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20260901120000', 'umbler_template_clicks'),
   ('20260914120000', 'meta_account_alerts_muted'),
   ('20260918120000', 'support_ai_sessions'),
+  ('20261001120000', 'composite_indexes_purchases_events'),
   ('20261005120000', 'meta_cloud_dispatch'),
+  ('20261017120000', 'revoke_public_execute'),
+  ('20261017120100', 'dispatch_claimed_at'),
+  ('20261017120200', 'schedule_crons_pg_cron'),
   ('20261019120000', 'add_hubla_platform'),
   ('20261021120000', 'add_more_checkout_platforms')
 on conflict (version) do nothing;

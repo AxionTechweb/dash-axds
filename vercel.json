@@ -1,11 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["gru1"],
+  "regions": [
+    "gru1"
+  ],
   "crons": [
-    {
-      "path": "/api/cron/rules",
-      "schedule": "0 9 * * *"
-    },
     {
       "path": "/api/cron/cleanup",
       "schedule": "30 3 * * *"
@@ -17,14 +15,6 @@
     {
       "path": "/api/cron/ga4",
       "schedule": "0 8 * * *"
-    },
-    {
-      "path": "/api/cron/umbler",
-      "schedule": "30 8 * * *"
-    },
-    {
-      "path": "/api/cron/dispatch",
-      "schedule": "0 12 * * *"
     }
   ]
 }

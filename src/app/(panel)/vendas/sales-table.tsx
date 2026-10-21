@@ -43,10 +43,17 @@ export type SaleRow = {
 export function SalesTable({
   rows,
   journeys,
+  vturbWatchByAd,
 }: {
   rows: SaleRow[];
   /** Jornada (eventos + compras) do visitante de cada venda, indexada por user_id — vazio quando a venda não casou com nenhum visitante. */
   journeys: Record<string, UserJourney>;
+  /**
+   * % médio assistido da VSL por ad_id (aproximação — a Vturb não expõe o %
+   * assistido por COMPRADOR individual na API pública, só agregado por
+   * criativo). null quando o ad_id não tem dado de retenção da Vturb.
+   */
+  vturbWatchByAd: Record<string, number | null>;
 }) {
   const [selected, setSelected] = useState<SaleRow | null>(null);
 
@@ -74,6 +81,7 @@ export function SalesTable({
                 "Plataforma",
                 "ad_id",
                 "Match",
+                "% VSL assistido (criativo)",
               ].map((label) => (
                 <th
                   key={label}
@@ -87,6 +95,7 @@ export function SalesTable({
           <tbody className="divide-y divide-border">
             {rows.map((row) => {
               const tier = classifySaleByValue(row.valor);
+              const watchPercent = row.ad_id ? vturbWatchByAd[row.ad_id] : null;
               return (
               <tr
                 key={row.id}
@@ -141,6 +150,11 @@ export function SalesTable({
                 <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
                   {row.match ?? "—"}
                 </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-xs tabular text-muted-foreground">
+                  {watchPercent !== null && watchPercent !== undefined
+                    ? `${watchPercent.toFixed(1)}%`
+                    : "—"}
+                </td>
               </tr>
               );
             })}
@@ -151,6 +165,7 @@ export function SalesTable({
       <SaleDialog
         sale={selected}
         journey={selected?.user_id ? journeys[selected.user_id] : undefined}
+        watchPercent={selected?.ad_id ? vturbWatchByAd[selected.ad_id] : null}
         onClose={() => setSelected(null)}
       />
     </>
@@ -171,10 +186,12 @@ function Field({ label, value }: { label: string; value: string }) {
 function SaleDialog({
   sale,
   journey,
+  watchPercent,
   onClose,
 }: {
   sale: SaleRow | null;
   journey: UserJourney | undefined;
+  watchPercent: number | null | undefined;
   onClose: () => void;
 }) {
   return (
@@ -208,7 +225,19 @@ function SaleDialog({
                 <Field label="ad_id" value={sale.ad_id ?? "— (orgânico/direto)"} />
                 <Field label="Match" value={sale.match ?? "—"} />
                 <Field label="user_id" value={sale.user_id ?? "—"} />
+                <Field
+                  label="% VSL assistido (média do criativo)"
+                  value={
+                    watchPercent !== null && watchPercent !== undefined
+                      ? `${watchPercent.toFixed(1)}%`
+                      : "—"
+                  }
+                />
               </div>
+              <p className="-mt-3 text-[0.62rem] text-muted-foreground">
+                Aproximação: a Vturb não expõe o % assistido por comprador individual, só a
+                média de quem veio do mesmo criativo.
+              </p>
 
               <div>
                 <p className="mb-2 text-[0.62rem] font-semibold uppercase tracking-wider text-muted-foreground">

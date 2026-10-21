@@ -199,6 +199,15 @@ export async function processDispatchQueue(options: {
 
   try {
     const admin = createAdminClient();
+
+    // Linha presa em "sending" = a função caiu no meio do envio. Não reenvia
+    // (pode ter saído), só marca como falha visível em vez de sumir da fila.
+    await admin
+      .from("wa_dispatch_log")
+      .update({ status: "failed", error: "Envio interrompido no meio — confira se a mensagem chegou antes de reenviar." })
+      .eq("status", "sending")
+      .lt("claimed_at", new Date(Date.now() - 10 * 60_000).toISOString());
+
     let query = admin
       .from("wa_dispatch_log")
       .select("id, area_id, trigger, source_ref, telefone, template_name, template_language, params, created_at")
@@ -217,7 +226,7 @@ export async function processDispatchQueue(options: {
       // Claim atômico: cron e `after` concorrentes nunca enviam a mesma linha 2x.
       const { data: claimed } = await admin
         .from("wa_dispatch_log")
-        .update({ status: "sending" })
+        .update({ status: "sending", claimed_at: new Date().toISOString() })
         .eq("id", row.id)
         .eq("status", "queued")
         .select("id");

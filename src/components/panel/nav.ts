@@ -1,8 +1,8 @@
 import {
+  Images,
   LayoutDashboard,
   LineChart,
   Megaphone,
-  MessageCircle,
   Plug,
   Send,
   Settings,
@@ -33,11 +33,11 @@ export const NAV_SECTIONS: { id: NavSection; label: string }[] = [
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, section: "analise" },
   { href: "/campanhas", label: "Campanhas", icon: Megaphone, section: "analise" },
+  { href: "/criativos", label: "Criativos", icon: Images, section: "analise" },
   { href: "/vendas", label: "Vendas", icon: ShoppingCart, section: "analise" },
   { href: "/financeiro", label: "Financeiro", icon: Wallet, section: "analise" },
   { href: "/ga4", label: "GA4", icon: LineChart, section: "analise" },
   { href: "/vturb", label: "Vturb", icon: Video, section: "analise" },
-  { href: "/umbler", label: "API Oficial", icon: MessageCircle, section: "analise" },
   { href: "/disparos", label: "Disparos", icon: Send, section: "operacao" },
   { href: "/integracoes", label: "Integrações", icon: Plug, section: "operacao" },
   { href: "/regras", label: "Regras", icon: Zap, section: "operacao" },

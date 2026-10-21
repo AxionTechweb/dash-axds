@@ -39,16 +39,23 @@ import { ProductBreakdown } from "@/components/panel/product-breakdown";
 import { RealtimeSales } from "@/components/panel/realtime-sales";
 import { RegionBreakdown } from "@/components/panel/region-breakdown";
 import { RevenueChart } from "@/components/panel/revenue-chart";
-import { HourSalesChart, WeekdaySalesChart } from "@/components/panel/sales-timing-charts";
+import {
+  HourSalesChart,
+  WeekdaySalesChart,
+} from "@/components/panel/sales-timing-charts";
 import { Card } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
 import { getRoasSegments } from "@/lib/attribution";
-import { formatCurrency, formatNumber, formatPercent, formatRoas } from "@/lib/format";
+import {
+  formatCurrency,
+  formatNumber,
+  formatPercent,
+  formatRoas,
+} from "@/lib/format";
 import { getAreaInsights } from "@/lib/meta/client";
 import {
   EMPTY_METRICS,
   getPurchaseMetrics,
-  getSalesTiming,
   mergeDailySpend,
 } from "@/lib/metrics";
 import { resolvePeriod } from "@/lib/period";
@@ -69,8 +76,10 @@ export default async function DashboardPage({
   const settings = activeArea ? await getSettings(activeArea.id) : null;
   const currency = settings?.currency ?? DEFAULT_SETTINGS.currency;
   const taxRate = settings?.tax_rate ?? DEFAULT_SETTINGS.tax_rate;
-  const gatewayFeePct = settings?.gateway_fee_pct ?? DEFAULT_SETTINGS.gateway_fee_pct;
-  const gatewayFeeFixed = settings?.gateway_fee_fixed ?? DEFAULT_SETTINGS.gateway_fee_fixed;
+  const gatewayFeePct =
+    settings?.gateway_fee_pct ?? DEFAULT_SETTINGS.gateway_fee_pct;
+  const gatewayFeeFixed =
+    settings?.gateway_fee_fixed ?? DEFAULT_SETTINGS.gateway_fee_fixed;
 
   if (!activeArea) {
     return (
@@ -83,14 +92,18 @@ export default async function DashboardPage({
   }
 
   // Dados próprios (Last Click) + mídia e funil (pixel) da Meta, em paralelo.
-  const [metrics, meta, timing, roasSegments] = await Promise.all([
+  // weekday/hour (timing de vendas) já vêm de dentro de getPurchaseMetrics —
+  // antes era uma segunda query idêntica a essa mesma tabela/período.
+  const [metrics, meta, roasSegments] = await Promise.all([
     getPurchaseMetrics(activeArea.id, period.from, period.to),
     getAreaInsights(activeArea.id, period.from, period.to),
-    getSalesTiming(activeArea.id, period.from, period.to),
     getRoasSegments(activeArea.id, period.from, period.to),
   ]);
 
-  const cartRecovery = { count: roasSegments.recoveryCount, revenue: roasSegments.recoveryRevenue };
+  const cartRecovery = {
+    count: roasSegments.recoveryCount,
+    revenue: roasSegments.recoveryRevenue,
+  };
 
   const safeMetrics = metrics ?? EMPTY_METRICS;
 
@@ -102,7 +115,8 @@ export default async function DashboardPage({
   // PayT). Conta em dólar não paga o imposto que a Meta retinha sobre contas
   // brasileiras — sem esse desconto aqui.
   const tax = revenue * (Number(taxRate) / 100);
-  const gatewayFees = revenue * (Number(gatewayFeePct) / 100) + Number(gatewayFeeFixed) * sales;
+  const gatewayFees =
+    revenue * (Number(gatewayFeePct) / 100) + Number(gatewayFeeFixed) * sales;
   const profit = revenue - adSpend - tax - gatewayFees;
 
   const roas = adSpend > 0 ? revenue / adSpend : 0;
@@ -114,7 +128,9 @@ export default async function DashboardPage({
   // recuperada nunca conta como Front, mesmo que seja de R$197 (decisão do
   // usuário, evita contar a mesma receita nos dois ROAS).
   const roasBackendRevenue =
-    roasSegments.upsellRevenue + roasSegments.downsellRevenue + roasSegments.recoveryRevenue;
+    roasSegments.upsellRevenue +
+    roasSegments.downsellRevenue +
+    roasSegments.recoveryRevenue;
   const roasFront = adSpend > 0 ? roasSegments.frontRevenue / adSpend : 0;
   const roasBackend = adSpend > 0 ? roasBackendRevenue / adSpend : 0;
 
@@ -202,6 +218,14 @@ export default async function DashboardPage({
           sub={`Ads ${formatCurrency(adSpend, currency)} · Imposto ${formatNumber(Number(taxRate))}% (${formatCurrency(tax, currency)}) · Gateway ${formatCurrency(gatewayFees, currency)}`}
         />
         <KpiCard
+          label="Margem de Lucro"
+          value={revenue > 0 ? formatPercent((profit / revenue) * 100, 1) : "—"}
+          icon={TrendingUp}
+          accent={profit < 0 ? "destructive" : "primary"}
+          sensitive={false}
+          sub="Lucro / Faturamento Bruto"
+        />
+        <KpiCard
           label="Vendas Aprovadas"
           value={formatNumber(sales)}
           icon={ShoppingBag}
@@ -227,7 +251,9 @@ export default async function DashboardPage({
           label="ROAS Backend"
           value={formatRoas(roasBackend)}
           icon={Target}
-          accent={roasBackend > 0 && roasBackend < 1 ? "destructive" : "primary"}
+          accent={
+            roasBackend > 0 && roasBackend < 1 ? "destructive" : "primary"
+          }
           sensitive={false}
           sub={`${formatCurrency(roasBackendRevenue, currency)} (Upsell+Downsell+Recuperação)`}
         />
@@ -279,7 +305,11 @@ export default async function DashboardPage({
             label="Conversão Funil"
             value={
               meta.insights.landingPageView > 0
-                ? formatPercent((safeMetrics.uniqueSales / meta.insights.landingPageView) * 100, 2)
+                ? formatPercent(
+                    (safeMetrics.uniqueSales / meta.insights.landingPageView) *
+                      100,
+                    2,
+                  )
                 : "—"
             }
             icon={Target}
@@ -327,7 +357,7 @@ export default async function DashboardPage({
             sub={`${formatNumber(safeMetrics.abandonedCount)} carrinho${safeMetrics.abandonedCount === 1 ? "" : "s"}`}
           />
           <KpiCard
-            label="Recuperação Carrinho Umbler"
+            label="Recuperação de Carrinho"
             value={formatCurrency(cartRecovery.revenue, currency)}
             icon={RotateCcw}
             accent="emerald"
@@ -395,7 +425,7 @@ export default async function DashboardPage({
             <CalendarDays className="size-4 text-muted-foreground" />
             <span className="micro-label">Vendas por Dia da Semana</span>
           </div>
-          <WeekdaySalesChart data={timing.weekday} />
+          <WeekdaySalesChart data={safeMetrics.weekday} />
         </Card>
 
         <Card>
@@ -403,7 +433,7 @@ export default async function DashboardPage({
             <Clock className="size-4 text-muted-foreground" />
             <span className="micro-label">Vendas por Horário</span>
           </div>
-          <HourSalesChart data={timing.hour} />
+          <HourSalesChart data={safeMetrics.hour} />
         </Card>
       </div>
 
@@ -414,7 +444,10 @@ export default async function DashboardPage({
             <Package className="size-4 text-muted-foreground" />
             <span className="micro-label">Vendas por Produto</span>
           </div>
-          <ProductBreakdown products={safeMetrics.products} currency={currency} />
+          <ProductBreakdown
+            products={safeMetrics.products}
+            currency={currency}
+          />
         </Card>
 
         <Card>
@@ -439,9 +472,7 @@ export default async function DashboardPage({
         <Card className="xl:col-span-2">
           <div className="flex items-center gap-2 border-b border-border p-4">
             <Activity className="size-4 text-muted-foreground" />
-            <span className="micro-label">
-              Faturamento vs Gasto
-            </span>
+            <span className="micro-label">Faturamento vs Gasto</span>
           </div>
           <div className="sensitive">
             <RevenueChart data={daily} currency={currency} />
@@ -451,9 +482,7 @@ export default async function DashboardPage({
         <Card>
           <div className="flex items-center gap-2 border-b border-border p-4">
             <Radio className="size-4 text-muted-foreground" />
-            <span className="micro-label">
-              Vendas em Tempo Real
-            </span>
+            <span className="micro-label">Vendas em Tempo Real</span>
           </div>
           <RealtimeSales
             areaId={activeArea.id}
@@ -465,9 +494,7 @@ export default async function DashboardPage({
         <Card className="xl:col-span-3">
           <div className="flex items-center gap-2 border-b border-border p-4">
             <Globe2 className="size-4 text-muted-foreground" />
-            <span className="micro-label">
-              Vendas por Região
-            </span>
+            <span className="micro-label">Vendas por Região</span>
           </div>
           <RegionBreakdown regions={safeMetrics.regions} currency={currency} />
         </Card>
