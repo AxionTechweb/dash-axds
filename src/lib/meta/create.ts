@@ -258,10 +258,24 @@ export type CreateCampaignInput = {
 export type CreativeInput = {
   adName: string;
   primaryText: string;
+  /** "single" = imagem única; "carousel" = cartões em `cards`. */
+  format: "single" | "carousel";
   headline: string;
   cta: string;
+  /** Imagem única (format "single"). */
   imageHash: string;
+  /** Carrossel: 2 a 10 cartões (limite da Meta). */
+  cards: CarouselCard[];
 };
+
+export type CarouselCard = {
+  imageHash: string;
+  headline: string;
+  description: string;
+  /** Vazio = usa o link da campanha. */
+  link: string | null;
+};
+
 
 /**
  * A Meta aceita no máximo 50 anúncios por conjunto. Acima disso a campanha
@@ -414,13 +428,37 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
       const label = `Criativo ${start + offset + 1} (${item.adName})`;
 
       // 3) Criativo
-      const linkData: Record<string, unknown> = {
-        image_hash: item.imageHash,
-        message: item.primaryText,
-        name: item.headline,
-        link: isMessages ? messageLink : input.link,
-        call_to_action: isMessages ? messageCta : { type: item.cta, value: { link: input.link } },
-      };
+      const ctaFor = (link: string | null) =>
+        isMessages ? messageCta : { type: item.cta, value: { link } };
+
+      const linkData: Record<string, unknown> =
+        item.format === "carousel"
+          ? {
+              message: item.primaryText,
+              link: isMessages ? messageLink : input.link,
+              call_to_action: ctaFor(input.link),
+              // Cada cartão leva imagem, título, descrição e link próprios.
+              child_attachments: item.cards.map((card) => {
+                const cardLink = isMessages ? messageLink : card.link || input.link;
+                return {
+                  image_hash: card.imageHash,
+                  name: card.headline,
+                  ...(card.description ? { description: card.description } : {}),
+                  link: cardLink,
+                  call_to_action: ctaFor(cardLink),
+                };
+              }),
+              // Meta reordena os cartões pelo desempenho; sem cartão final de perfil.
+              multi_share_optimized: true,
+              multi_share_end_card: false,
+            }
+          : {
+              image_hash: item.imageHash,
+              message: item.primaryText,
+              name: item.headline,
+              link: isMessages ? messageLink : input.link,
+              call_to_action: ctaFor(input.link),
+            };
 
       const creative = await graphPost<{ id: string }>(`${actId}/adcreatives`, token, {
         name: item.adName,

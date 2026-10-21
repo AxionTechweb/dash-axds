@@ -57,3 +57,7 @@ export function messageDestinationType(dests: MessageDestination[]): string | nu
   if (ig) return "INSTAGRAM_DIRECT";
   return null;
 }
+
+/** Carrossel: a Meta aceita de 2 a 10 cartões. */
+export const CAROUSEL_MIN_CARDS = 2;
+export const CAROUSEL_MAX_CARDS = 10;

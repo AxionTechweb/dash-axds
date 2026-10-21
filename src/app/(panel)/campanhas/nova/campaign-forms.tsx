@@ -7,6 +7,8 @@ import { useActionState, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import {
+  CAROUSEL_MAX_CARDS,
+  CAROUSEL_MIN_CARDS,
   CTA_OPTIONS,
   DEFAULT_URL_TAGS,
   GOAL_OPTIONS,
@@ -81,14 +83,32 @@ function ActivateToggle({
 
 /* ------------------------------------------------------------- criar do zero */
 
+type CardDraft = {
+  key: number;
+  file: File | null;
+  headline: string;
+  description: string;
+  link: string;
+};
+
 type CreativeDraft = {
   key: number;
+  /** Imagem única ou carrossel (cards). */
+  format: "single" | "carousel";
   file: File | null;
   primaryText: string;
   headline: string;
   cta: string;
   adName: string;
+  cards: CardDraft[];
 };
+
+let cardKey = 0;
+
+function newCard(file: File | null = null): CardDraft {
+  cardKey += 1;
+  return { key: cardKey, file, headline: "", description: "", link: "" };
+}
 
 const TEXTAREA_CLASS =
   "w-full rounded-xl border border-border bg-[hsl(var(--foreground)/0.02)] p-3 text-sm focus-visible:border-[hsl(var(--primary)/0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30";
@@ -99,12 +119,14 @@ function newCreative(base?: CreativeDraft, file: File | null = null): CreativeDr
   creativeKey += 1;
   return {
     key: creativeKey,
+    format: "single",
     file,
     // Novo criativo herda os textos do anterior (caso comum: mesma copy, imagem diferente).
     primaryText: base?.primaryText ?? "",
     headline: base?.headline ?? "",
     cta: base?.cta ?? "LEARN_MORE",
     adName: "",
+    cards: [newCard(), newCard()],
   };
 }
 
@@ -179,10 +201,22 @@ function CreateCampaignFormInner({
     setUploadError(null);
     const form = new FormData(event.currentTarget);
 
-    const missing = creatives.findIndex((c) => !c.file);
-    if (missing >= 0) {
-      setUploadError(`Criativo ${missing + 1}: escolha a imagem.`);
-      return;
+    for (const [index, c] of creatives.entries()) {
+      if (c.format === "single" && !c.file) {
+        setUploadError(`Criativo ${index + 1}: escolha a imagem.`);
+        return;
+      }
+      if (c.format === "carousel") {
+        if (c.cards.length < CAROUSEL_MIN_CARDS || c.cards.length > CAROUSEL_MAX_CARDS) {
+          setUploadError(`Criativo ${index + 1}: o carrossel precisa de ${CAROUSEL_MIN_CARDS} a ${CAROUSEL_MAX_CARDS} cartões.`);
+          return;
+        }
+        const bad = c.cards.findIndex((card) => !card.file || !card.headline.trim());
+        if (bad >= 0) {
+          setUploadError(`Criativo ${index + 1}, cartão ${bad + 1}: escolha a imagem e escreva o título.`);
+          return;
+        }
+      }
     }
 
     if (active) {
@@ -194,25 +228,49 @@ function CreateCampaignFormInner({
     }
 
     // Uma imagem por requisição: fica abaixo do limite de corpo da Vercel.
-    const payload: Record<string, string>[] = [];
-    for (const [index, item] of creatives.entries()) {
-      setProgress(`Enviando imagem ${index + 1} de ${creatives.length}…`);
+    const totalImages = creatives.reduce((n, c) => n + (c.format === "carousel" ? c.cards.length : 1), 0);
+    let sent = 0;
+    const uploadOne = async (file: File): Promise<string | { error: string }> => {
+      sent += 1;
+      setProgress(`Enviando imagem ${sent} de ${totalImages}…`);
       const upload = new FormData();
       upload.set("accountId", accountId);
-      upload.set("image", item.file as File);
+      upload.set("image", file);
       const result = await uploadAdImageAction(upload);
-      if (!result.hash) {
-        setProgress(null);
-        setUploadError(`Criativo ${index + 1}: ${result.error ?? "falha ao enviar a imagem."}`);
-        return;
-      }
-      payload.push({
-        imageHash: result.hash,
+      return result.hash ?? { error: result.error ?? "falha ao enviar a imagem." };
+    };
+
+    const payload: Record<string, unknown>[] = [];
+    for (const [index, item] of creatives.entries()) {
+      const base = {
+        format: item.format,
         primaryText: item.primaryText,
         headline: item.headline,
         cta: item.cta,
         adName: item.adName,
-      });
+      };
+
+      if (item.format === "carousel") {
+        const cards: Record<string, string>[] = [];
+        for (const [cardIndex, card] of item.cards.entries()) {
+          const hash = await uploadOne(card.file as File);
+          if (typeof hash !== "string") {
+            setProgress(null);
+            setUploadError(`Criativo ${index + 1}, cartão ${cardIndex + 1}: ${hash.error}`);
+            return;
+          }
+          cards.push({ imageHash: hash, headline: card.headline, description: card.description, link: card.link });
+        }
+        payload.push({ ...base, imageHash: "", cards });
+      } else {
+        const hash = await uploadOne(item.file as File);
+        if (typeof hash !== "string") {
+          setProgress(null);
+          setUploadError(`Criativo ${index + 1}: ${hash.error}`);
+          return;
+        }
+        payload.push({ ...base, imageHash: hash, cards: [] });
+      }
     }
 
     setProgress(null);
@@ -452,16 +510,103 @@ function CreateCampaignFormInner({
                 </button>
               ) : null}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor={`c-image-${item.key}`}>Imagem (JPG ou PNG, até 4 MB)</Label>
-              <Input
-                id={`c-image-${item.key}`}
-                type="file"
-                accept="image/jpeg,image/png"
-                onChange={(event) => update(item.key, { file: event.target.files?.[0] ?? null })}
-              />
-              {item.file ? <p className="text-xs text-muted-foreground">{item.file.name}</p> : null}
+            <div className="flex gap-4 text-sm">
+              {(
+                [
+                  { id: "single", label: "Imagem única" },
+                  { id: "carousel", label: "Carrossel" },
+                ] as const
+              ).map((f) => (
+                <label key={f.id} className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    checked={item.format === f.id}
+                    onChange={() => update(item.key, { format: f.id })}
+                    className="size-4 accent-[hsl(var(--primary))]"
+                  />
+                  {f.label}
+                </label>
+              ))}
             </div>
+
+            {item.format === "single" ? (
+              <div className="space-y-2">
+                <Label htmlFor={`c-image-${item.key}`}>Imagem (JPG ou PNG, até 4 MB)</Label>
+                <Input
+                  id={`c-image-${item.key}`}
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  onChange={(event) => update(item.key, { file: event.target.files?.[0] ?? null })}
+                />
+                {item.file ? <p className="text-xs text-muted-foreground">{item.file.name}</p> : null}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Cartões ({item.cards.length} de {CAROUSEL_MAX_CARDS}) — cada um com imagem, título e, se quiser,
+                  descrição e link próprio (vazio usa o link da campanha).
+                </p>
+                {item.cards.map((card, cardIndex) => {
+                  const setCard = (patch: Partial<CardDraft>) =>
+                    update(item.key, {
+                      cards: item.cards.map((c) => (c.key === card.key ? { ...c, ...patch } : c)),
+                    });
+                  return (
+                    <div key={card.key} className="space-y-2 rounded-lg border border-border p-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium">Cartão {cardIndex + 1}</p>
+                        {item.cards.length > CAROUSEL_MIN_CARDS ? (
+                          <button
+                            type="button"
+                            onClick={() => update(item.key, { cards: item.cards.filter((c) => c.key !== card.key) })}
+                            className="text-xs text-muted-foreground hover:text-destructive"
+                          >
+                            Remover
+                          </button>
+                        ) : null}
+                      </div>
+                      <Input
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        aria-label={`Imagem do cartão ${cardIndex + 1}`}
+                        onChange={(event) => setCard({ file: event.target.files?.[0] ?? null })}
+                      />
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <Input
+                          placeholder="Título"
+                          maxLength={255}
+                          value={card.headline}
+                          onChange={(event) => setCard({ headline: event.target.value })}
+                        />
+                        <Input
+                          placeholder="Descrição (opcional)"
+                          maxLength={255}
+                          value={card.description}
+                          onChange={(event) => setCard({ description: event.target.value })}
+                        />
+                        {!usesMessages ? (
+                          <Input
+                            type="url"
+                            placeholder="Link (opcional)"
+                            value={card.link}
+                            onChange={(event) => setCard({ link: event.target.value })}
+                          />
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+                {item.cards.length < CAROUSEL_MAX_CARDS ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => update(item.key, { cards: [...item.cards, newCard()] })}
+                  >
+                    <Plus className="size-4" /> Adicionar cartão
+                  </Button>
+                ) : null}
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor={`c-text-${item.key}`}>Texto principal</Label>
               <textarea
@@ -475,16 +620,18 @@ function CreateCampaignFormInner({
               />
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="space-y-2">
-                <Label htmlFor={`c-headline-${item.key}`}>Título</Label>
-                <Input
-                  id={`c-headline-${item.key}`}
-                  maxLength={255}
-                  required
-                  value={item.headline}
-                  onChange={(event) => update(item.key, { headline: event.target.value })}
-                />
-              </div>
+              {item.format === "single" ? (
+                <div className="space-y-2">
+                  <Label htmlFor={`c-headline-${item.key}`}>Título</Label>
+                  <Input
+                    id={`c-headline-${item.key}`}
+                    maxLength={255}
+                    required
+                    value={item.headline}
+                    onChange={(event) => update(item.key, { headline: event.target.value })}
+                  />
+                </div>
+              ) : null}
               {!usesMessages ? (
                 <div className="space-y-2">
                   <Label htmlFor={`c-cta-${item.key}`}>Botão</Label>

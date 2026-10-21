@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { getActiveArea } from "@/lib/areas";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  CAROUSEL_MAX_CARDS,
+  CAROUSEL_MIN_CARDS,
   CTA_IDS,
   DEFAULT_URL_TAGS,
   GOAL_OPTIONS,
@@ -18,6 +20,7 @@ import {
   createCampaign,
   duplicateCampaign,
   uploadAdImage,
+  type CarouselCard,
   type CreativeInput,
 } from "@/lib/meta/create";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -147,20 +150,51 @@ export async function createCampaignAction(
     const label = `Criativo ${index + 1}`;
     const clip = (value: unknown, max: number) => String(value ?? "").trim().slice(0, max);
 
+    const isHash = (value: string) => /^[a-f0-9]{16,64}$/i.test(value);
+    const format = item.format === "carousel" ? "carousel" : "single";
     const imageHash = clip(item.imageHash, 100);
     const primaryText = clip(item.primaryText, 2000);
     const headline = clip(item.headline, 255);
     const cta = clip(item.cta, 30);
-    if (!/^[a-f0-9]{16,64}$/i.test(imageHash)) return { error: `${label}: envie a imagem.` };
     if (!primaryText) return { error: `${label}: escreva o texto principal.` };
-    if (!headline) return { error: `${label}: escreva o título.` };
     if (!usesMessages && !CTA_IDS.includes(cta)) return { error: `${label}: botão inválido.` };
 
+    const cards: CarouselCard[] = [];
+    if (format === "carousel") {
+      const rawCards = Array.isArray(item.cards) ? item.cards : [];
+      if (rawCards.length < CAROUSEL_MIN_CARDS || rawCards.length > CAROUSEL_MAX_CARDS) {
+        return { error: `${label}: o carrossel precisa de ${CAROUSEL_MIN_CARDS} a ${CAROUSEL_MAX_CARDS} cartões.` };
+      }
+      for (const [cardIndex, rawCard] of rawCards.entries()) {
+        const card = (rawCard ?? {}) as Record<string, unknown>;
+        const cardLabel = `${label}, cartão ${cardIndex + 1}`;
+        const cardHash = clip(card.imageHash, 100);
+        const cardHeadline = clip(card.headline, 255);
+        const cardLink = clip(card.link, 1000) || null;
+        if (!isHash(cardHash)) return { error: `${cardLabel}: envie a imagem.` };
+        if (!cardHeadline) return { error: `${cardLabel}: escreva o título.` };
+        if (cardLink && !/^https:\/\/[^\s]+$/i.test(cardLink)) {
+          return { error: `${cardLabel}: o link precisa começar com https://` };
+        }
+        cards.push({
+          imageHash: cardHash,
+          headline: cardHeadline,
+          description: clip(card.description, 255),
+          link: cardLink,
+        });
+      }
+    } else {
+      if (!isHash(imageHash)) return { error: `${label}: envie a imagem.` };
+      if (!headline) return { error: `${label}: escreva o título.` };
+    }
+
     creatives.push({
+      format,
       imageHash,
       primaryText,
       headline,
       cta,
+      cards,
       adName: clip(item.adName, 150) || `${campaignName} - ${index + 1}`,
     });
   }
