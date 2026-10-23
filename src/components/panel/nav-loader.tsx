@@ -62,7 +62,7 @@ export function NavLoader() {
   return (
     <div className={`ax-loader${show ? " ax-loader-show" : ""}`} aria-hidden={!show} role="status">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/brand/logo.png" alt="" className="ax-loader-logo" />
+      <img src="/brand/logo-trim.png" alt="" className="ax-loader-logo" />
       <span className="ax-loader-spinner" />
       <span className="sr-only">Carregando…</span>
     </div>

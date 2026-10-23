@@ -448,8 +448,9 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1.75rem;
-  background: #000000;
+  gap: 1rem;
+  /* Segue o tema: preto no escuro, claro no modo claro. */
+  background: hsl(var(--background));
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -466,13 +467,14 @@
     visibility 0s;
 }
 .ax-loader-logo {
-  width: min(16rem, 60vw);
+  display: block;
+  width: min(8.5rem, 42vw);
   height: auto;
   animation: axLogoPulse 2.4s cubic-bezier(0.77, 0, 0.175, 1) infinite;
 }
 .ax-loader-spinner {
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   border-radius: 9999px;
   border: 3px solid transparent;
   border-top-color: hsl(var(--primary));
@@ -497,5 +499,20 @@
   .ax-loader-logo,
   .ax-loader-spinner {
     animation: none;
+  }
+}
+
+/* Modo claro: a logo tem partes claras (creme/branco) que sumiriam no fundo
+   branco — escurece mantendo o pulso. */
+:root[data-theme="light"] .ax-loader-logo {
+  animation-name: axLogoPulseLight;
+}
+@keyframes axLogoPulseLight {
+  0%,
+  100% {
+    filter: brightness(0.45) contrast(1.15) drop-shadow(0 0 0 hsl(var(--primary) / 0));
+  }
+  50% {
+    filter: brightness(0.6) contrast(1.15) drop-shadow(0 0 12px hsl(var(--primary) / 0.3));
   }
 }
