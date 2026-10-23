@@ -44,14 +44,14 @@ export async function generateMetadata(): Promise<Metadata> {
       template: `%s · ${branding.product_name}`,
     },
     description: "Painel de tracking e atribuição de anúncios.",
-    ...(branding.favicon_url
-      ? { icons: { icon: branding.favicon_url, apple: branding.favicon_url } }
-      : {}),
+    icons: branding.favicon_url
+      ? { icon: branding.favicon_url, apple: branding.favicon_url }
+      : { icon: "/icons/icon-192.png", apple: "/icons/apple-touch-icon.png" },
     // iOS não lê o manifest pra instalar — precisa desses meta tags próprios.
     appleWebApp: {
       capable: true,
       statusBarStyle: "black-translucent",
-      title: branding.product_name,
+      title: branding.product_name !== "Dashboard" ? branding.product_name : "Axion",
     },
   };
 }

@@ -3,56 +3,46 @@ import type { MetadataRoute } from "next";
 import { getBranding } from "@/lib/branding";
 
 /**
- * Manifest do PWA — gerado dinamicamente a partir do branding da instância
- * (white label: nome e ícone variam por cliente, nunca fixos no repo).
- * Só "instalável" (Adicionar à tela inicial): sem service worker/cache
- * offline de propósito — é um painel de dados ao vivo, mostrar números
- * desatualizados sem o usuário perceber que está offline seria pior que não
- * funcionar offline.
+ * Manifest do PWA (instalar o painel como app no celular/desktop).
+ *
+ * Nome vem do branding da instância; enquanto ele estiver no padrão neutro
+ * ("Dashboard"), usa o nome da Axion. Ícones: os do branding se houver
+ * favicon configurado, senão os de /public/icons (gerados da logo da Axion,
+ * nos tamanhos que o Android/Chrome exigem para instalar).
+ *
+ * O service worker (public/sw.js) só guarda os ícones — nunca o código nem os
+ * dados: é um painel ao vivo, número velho em cache seria pior que offline.
  */
-function guessImageMime(url: string): string {
-  const ext = url.split("?")[0].split(".").pop()?.toLowerCase();
-  switch (ext) {
-    case "png":
-      return "image/png";
-    case "svg":
-      return "image/svg+xml";
-    case "jpg":
-    case "jpeg":
-      return "image/jpeg";
-    case "webp":
-      return "image/webp";
-    case "ico":
-      return "image/x-icon";
-    default:
-      return "image/png";
-  }
-}
+const DEFAULT_NAME = "Axion Data Systems";
+const DEFAULT_SHORT_NAME = "Axion";
 
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const branding = await getBranding();
+  const custom = branding.product_name && branding.product_name !== "Dashboard";
 
   return {
-    name: branding.product_name,
-    short_name: branding.product_name,
+    name: custom ? branding.product_name : DEFAULT_NAME,
+    short_name: custom ? branding.product_name : DEFAULT_SHORT_NAME,
     description: "Painel de tracking e atribuição de anúncios.",
-    start_url: "/",
+    lang: "pt-BR",
+    // Abre direto no painel; sem sessão, o proxy manda para o /login.
+    start_url: "/dashboard",
+    scope: "/",
     display: "standalone",
-    // Mesmo tom do tema escuro padrão (--background: 0 0% 1%) — a tela de
-    // splash/instalação não pisca claro antes do app carregar.
-    background_color: "#030303",
-    theme_color: "#030303",
+    orientation: "any",
+    background_color: "#000000",
+    theme_color: "#000000",
     icons: branding.favicon_url
-      ? [
+      ? [{ src: branding.favicon_url, sizes: "any", purpose: "any" }]
+      : [
+          { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
           {
-            // Reaproveita o favicon já configurado no branding da instância —
-            // sem garantia de ser 512×512, então "any" em vez de inventar um
-            // tamanho que a imagem pode não ter de verdade.
-            src: branding.favicon_url,
-            sizes: "any",
-            type: guessImageMime(branding.favicon_url),
+            src: "/icons/maskable-icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
           },
-        ]
-      : [],
+        ],
   };
 }
