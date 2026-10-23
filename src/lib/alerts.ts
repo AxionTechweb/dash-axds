@@ -3,6 +3,8 @@ import "server-only";
 import { accountStatusLabel } from "@/lib/meta/accounts";
 import { getAccountStatus, getAdAccounts, getAdReviewStatuses } from "@/lib/meta/client";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendPush } from "@/lib/push";
+import { checkNoSalesPush } from "@/lib/push-events";
 import { notifyArea } from "@/lib/whatsapp/client";
 
 /**
@@ -202,6 +204,12 @@ async function checkPixOutageAlert(areaId: string): Promise<void> {
       areaId,
       `⚠️ ${stuckCount} pagamentos via PIX presos em "aguardando pagamento" há mais de 15 minutos. Pode ser instabilidade no PIX, não só desistência de cliente.\nConfere manualmente aqui: https://downdetector.com.br/en/status/pix/`,
     );
+    await sendPush({
+      title: "⚠️ PIX travado",
+      body: `${stuckCount} pagamentos via PIX presos em "aguardando pagamento" há mais de 15 min.`,
+      url: "/vendas",
+      tag: "pix-outage",
+    });
   }
 }
 
@@ -226,6 +234,12 @@ async function checkAccountStatusAlerts(areaId: string): Promise<void> {
         areaId,
         `🚫 Conta de anúncio "${account.label}" foi desativada na Meta (${label}). As campanhas dessa conta pararam de rodar.`,
       );
+      await sendPush({
+        title: "🚫 Conta de anúncio bloqueada",
+        body: `"${account.label}" foi desativada na Meta (${label}). As campanhas pararam.`,
+        url: "/integracoes",
+        tag: `account-${account.ad_account_id}`,
+      });
     }
 
     // Só pra exibição/depuração — a decisão de alertar não depende mais disso.
@@ -258,6 +272,12 @@ async function checkAdRejectionAlerts(areaId: string): Promise<void> {
           areaId,
           `🚫 Criativo reprovado na Meta — "${ad.name}" (${account.label}).\nMotivo: ${reason}`,
         );
+        await sendPush({
+          title: "🚫 Criativo reprovado",
+          body: `"${ad.name}" foi reprovado na Meta. Motivo: ${reason}`,
+          url: "/criativos",
+          tag: `ad-rejected-${ad.id}`,
+        });
       }
     }
   }
@@ -279,6 +299,12 @@ export async function runAlertsForAllAreas(): Promise<AlertsAreaResult[]> {
       await checkNoSalesAlert(areaId);
     } catch (err) {
       errors.push(`no_sales: ${err instanceof Error ? err.message : "erro desconhecido"}`);
+    }
+
+    try {
+      await checkNoSalesPush(areaId);
+    } catch (err) {
+      errors.push(`no_sales_push: ${err instanceof Error ? err.message : "erro desconhecido"}`);
     }
 
     try {

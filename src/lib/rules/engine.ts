@@ -5,6 +5,7 @@ import { getMetaEntities, type MetaLevel } from "@/lib/meta/campaigns";
 import { updateEntityStatus } from "@/lib/meta/write";
 import { resolvePeriod } from "@/lib/period";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendPush } from "@/lib/push";
 import { notifyArea } from "@/lib/whatsapp/client";
 
 /**
@@ -146,11 +147,21 @@ export async function runRule(
         rule.area_id,
         `🔴 Regra "${rule.nome}" pausou "${entity.name}" na Meta (${metricLabel}).`,
       );
+      await sendPush({
+        title: "🔴 Regra pausou um anúncio",
+        body: `"${rule.nome}" pausou "${entity.name}" (${metricLabel}).`,
+        url: "/regras",
+      });
     } else if (actionTaken === "falha ao pausar") {
       await notifyArea(
         rule.area_id,
         `⚠️ Regra "${rule.nome}" tentou pausar "${entity.name}" mas falhou: ${errorMessage}.`,
       );
+      await sendPush({
+        title: "⚠️ Regra não conseguiu pausar",
+        body: `"${rule.nome}" tentou pausar "${entity.name}" e falhou: ${errorMessage}.`,
+        url: "/regras",
+      });
     } else {
       await notifyArea(
         rule.area_id,

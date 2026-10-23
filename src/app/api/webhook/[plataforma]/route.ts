@@ -25,6 +25,7 @@ import {
   safeEqual,
   savePurchase,
 } from "@/lib/webhooks/common";
+import { notifyPurchaseChange } from "@/lib/push-events";
 import { notifyArea } from "@/lib/whatsapp/client";
 
 /**
@@ -381,6 +382,16 @@ export async function POST(
   const valor = normalizeAmount(platform, firstNumber(source, paths.value));
   const moeda = pick(paths.currency);
 
+  // Status anterior desta transação: a notificação push só sai quando o
+  // status MUDA (webhook reenviado com o mesmo status não notifica de novo).
+  const { data: previous } = await createAdminClient()
+    .from("purchases")
+    .select("status")
+    .eq("area_id", area.areaId)
+    .eq("transaction_id", transactionId)
+    .maybeSingle();
+  const previousStatus = (previous?.status as string | undefined) ?? null;
+
   try {
     await savePurchase({
       areaId: area.areaId,
@@ -429,6 +440,11 @@ export async function POST(
       if (ready) await processDispatchQueue({ areaId: area.areaId, limit: 20, maxMs: 20_000 });
     });
   }
+
+  // Push no celular: venda aprovada, reembolso, chargeback (+ meta do mês).
+  after(() =>
+    notifyPurchaseChange({ areaId: area.areaId, previousStatus, status, valor, moeda, produto }),
+  );
 
   return json({ ok: true }, 200);
 }

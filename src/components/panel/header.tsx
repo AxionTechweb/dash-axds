@@ -6,6 +6,7 @@ import type { Branding } from "@/lib/branding";
 import { GoalProgress } from "./goal-progress";
 import { HideValuesButton, RefreshButton } from "./header-actions";
 import { InstallAppButton } from "./install-app";
+import { NotificationsButton } from "./notifications-button";
 import { PeriodSelector } from "./period-selector";
 import { MobileNav } from "./sidebar";
 
@@ -76,6 +77,7 @@ export function Header({
           </Suspense>
           <HideValuesButton />
           <RefreshButton />
+          <NotificationsButton />
           <InstallAppButton />
         </div>
       </div>
