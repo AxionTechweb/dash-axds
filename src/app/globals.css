@@ -434,3 +434,68 @@
     transition: none;
   }
 }
+
+/* =============================================================================
+   Tela de carregamento ao trocar de aba (NavLoader) — adaptada do loader do
+   portal-guardian-wing para a Axion: preto, logo pulsando em dourado, spinner
+   dourado. Aparece/some por opacidade para não piscar.
+   ============================================================================= */
+.ax-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.75rem;
+  background: #000000;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s linear 0.35s;
+}
+.ax-loader-show {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s;
+}
+.ax-loader-logo {
+  width: min(16rem, 60vw);
+  height: auto;
+  animation: axLogoPulse 2.4s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+}
+.ax-loader-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  border-top-color: hsl(var(--primary));
+  border-right-color: hsl(var(--primary));
+  animation: axSpin 0.9s linear infinite;
+}
+@keyframes axLogoPulse {
+  0%,
+  100% {
+    filter: brightness(0.85) drop-shadow(0 0 0 hsl(var(--primary) / 0));
+  }
+  50% {
+    filter: brightness(1.1) drop-shadow(0 0 18px hsl(var(--primary) / 0.35));
+  }
+}
+@keyframes axSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ax-loader-logo,
+  .ax-loader-spinner {
+    animation: none;
+  }
+}

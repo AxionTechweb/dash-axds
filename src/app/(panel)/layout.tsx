@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { Header } from "@/components/panel/header";
+import { NavLoader } from "@/components/panel/nav-loader";
 import { Sidebar } from "@/components/panel/sidebar";
 import { ValuesProvider } from "@/components/panel/values-context";
 import { getActiveArea, getAreas } from "@/lib/areas";
@@ -63,6 +65,10 @@ export default async function PanelLayout({
         />
         <main className="p-4 lg:p-6">{children}</main>
       </div>
+      {/* useSearchParams exige Suspense no App Router. */}
+      <Suspense fallback={null}>
+        <NavLoader />
+      </Suspense>
     </ValuesProvider>
   );
 }
