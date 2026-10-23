@@ -35,12 +35,16 @@ export function Header({
   return (
     <header className="sticky top-0 z-20 border-b border-border bg-[hsl(var(--background)/0.8)] backdrop-blur-xl">
       <div className="flex flex-wrap items-center gap-4 px-4 py-4 lg:px-6">
-        <MobileNav
-          branding={branding}
-          areas={areas}
-          activeArea={activeArea}
-          userEmail={userEmail}
-        />
+        {/* No celular a navegação é o dock de baixo (MobileDock); a gaveta só
+            fica para trocar de área quando houver mais de uma. */}
+        {areas.length > 1 ? (
+          <MobileNav
+            branding={branding}
+            areas={areas}
+            activeArea={activeArea}
+            userEmail={userEmail}
+          />
+        ) : null}
 
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-base font-semibold tracking-tight text-foreground">

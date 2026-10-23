@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { Header } from "@/components/panel/header";
+import { MobileDock } from "@/components/panel/mobile-dock";
 import { NavLoader } from "@/components/panel/nav-loader";
 import { Sidebar } from "@/components/panel/sidebar";
 import { ValuesProvider } from "@/components/panel/values-context";
@@ -63,8 +64,10 @@ export default async function PanelLayout({
           goal={goal}
           currency={currency}
         />
-        <main className="p-4 lg:p-6">{children}</main>
+        {/* pb extra no celular: espaço para o dock flutuante não cobrir o conteúdo. */}
+        <main className="p-4 pb-28 lg:p-6">{children}</main>
       </div>
+      <MobileDock userEmail={user.email ?? ""} />
       {/* useSearchParams exige Suspense no App Router. */}
       <Suspense fallback={null}>
         <NavLoader />
