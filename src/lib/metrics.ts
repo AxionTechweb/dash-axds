@@ -1,6 +1,6 @@
 import "server-only";
 
-import { classifySaleByValue } from "@/lib/sale-value-tier";
+import { getProductTierMap, tierOf } from "@/lib/product-tiers";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -139,6 +139,7 @@ export async function getPurchaseMetrics(
   to: Date,
 ): Promise<PurchaseMetrics> {
   let rows: PurchaseRow[] = [];
+  const tiersPromise = getProductTierMap(areaId);
 
   try {
     const supabase = await createClient();
@@ -158,6 +159,7 @@ export async function getPurchaseMetrics(
   } catch {
     return EMPTY_METRICS;
   }
+  const tiers = await tiersPromise;
 
   const metrics: PurchaseMetrics = {
     ...EMPTY_METRICS,
@@ -196,7 +198,7 @@ export async function getPurchaseMetrics(
           row.email?.trim().toLowerCase() || `__no_email_${row.id}`,
         );
 
-        const valueTier = classifySaleByValue(value);
+        const valueTier = tierOf(tiers, row.produto);
         if (valueTier === "upsell") {
           metrics.upsellCount += 1;
           metrics.upsellRevenue += value;

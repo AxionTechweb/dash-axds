@@ -5,13 +5,19 @@ import { useState } from "react";
 
 import { formatCurrency, maskEmail, maskPhone } from "@/lib/format";
 import type { UserJourney } from "@/lib/events";
-import { classifySaleByValue, SALE_TIER_LABEL } from "@/lib/sale-value-tier";
 import { cn } from "@/lib/utils";
 
 import { buildTimeline, EventsTimeline, ProductsList, STATUS_LABEL, STATUS_STYLE } from "./journey-shared";
 
+const TIER_LABEL: Record<string, string> = {
+  vd: "VD",
+  upsell: "Upsell",
+  downsell: "Downsell",
+  outro: "Outro",
+};
+
 const TIER_STYLE: Record<string, string> = {
-  front: "bg-[hsl(var(--primary)/0.15)] text-primary",
+  vd: "bg-[hsl(var(--primary)/0.15)] text-primary",
   upsell: "bg-[hsl(var(--accent-emerald)/0.15)] text-emerald",
   downsell: "bg-[hsl(var(--accent-purple)/0.15)] text-purple",
   outro: "bg-muted text-muted-foreground",
@@ -28,6 +34,8 @@ export type SaleRow = {
   moeda: string | null;
   status: string;
   plataforma: string;
+  /** Tier do produto (Configurações → Tiers de produto). */
+  tier: string;
   ad_id: string | null;
   match: string | null;
   user_id: string | null;
@@ -94,7 +102,7 @@ export function SalesTable({
           </thead>
           <tbody className="divide-y divide-border">
             {rows.map((row) => {
-              const tier = classifySaleByValue(row.valor);
+              const tier = row.tier;
               const watchPercent = row.ad_id ? vturbWatchByAd[row.ad_id] : null;
               return (
               <tr
@@ -127,7 +135,7 @@ export function SalesTable({
                         TIER_STYLE[tier],
                       )}
                     >
-                      {SALE_TIER_LABEL[tier]}
+                      {TIER_LABEL[tier] ?? tier}
                     </span>
                   )}
                 </td>
@@ -218,7 +226,7 @@ function SaleDialog({
                   )}
                 />
                 <Field label="Status" value={STATUS_LABEL[sale.status] ?? sale.status} />
-                <Field label="Tier" value={SALE_TIER_LABEL[classifySaleByValue(sale.valor)]} />
+                <Field label="Tier" value={TIER_LABEL[sale.tier] ?? "Outro"} />
                 <Field label="E-mail" value={maskEmail(sale.email)} />
                 <Field label="Telefone" value={maskPhone(sale.telefone)} />
                 <Field label="Plataforma" value={sale.plataforma} />

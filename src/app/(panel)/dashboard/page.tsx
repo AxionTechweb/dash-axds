@@ -123,9 +123,9 @@ export default async function DashboardPage({
   const cpa = sales > 0 ? adSpend / sales : 0;
   const ticketMedio = sales > 0 ? revenue / sales : 0;
 
-  // ROAS Front (venda principal, R$197) vs ROAS Backend (Upsell + Downsell +
-  // Recuperação de carrinho via Umbler) — mutuamente exclusivos: uma venda
-  // recuperada nunca conta como Front, mesmo que seja de R$197 (decisão do
+  // ROAS Front (produtos VD/Outro) vs ROAS Backend (Upsell + Downsell +
+  // Recuperação de carrinho) — mutuamente exclusivos: uma venda
+  // recuperada nunca conta como Front, mesmo sendo produto VD (decisão do
   // usuário, evita contar a mesma receita nos dois ROAS).
   const roasBackendRevenue =
     roasSegments.upsellRevenue +

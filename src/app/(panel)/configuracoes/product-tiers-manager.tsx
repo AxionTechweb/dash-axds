@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef } from "react";
+import { useActionState, useRef, useState } from "react";
 
 import { saveProductTier } from "@/app/(panel)/integracoes/actions";
 import type { FormState } from "@/app/(panel)/integracoes/actions";
@@ -15,6 +15,10 @@ const TIER_OPTIONS: { value: string; label: string }[] = [
 function ProductRow({ produto, tier }: { produto: string; tier: string }) {
   const [state, action] = useActionState<FormState, FormData>(saveProductTier, {});
   const formRef = useRef<HTMLFormElement>(null);
+  // Controlado: o React 19 reseta campos não controlados depois da action,
+  // e o select voltava a mostrar o tier antigo (parecia que só 1 produto
+  // aceitava Upsell).
+  const [value, setValue] = useState(tier);
 
   return (
     <li className="list-tile flex items-center gap-3 p-3">
@@ -23,8 +27,11 @@ function ProductRow({ produto, tier }: { produto: string; tier: string }) {
         <p className="min-w-0 flex-1 truncate text-sm tracking-tight">{produto}</p>
         <select
           name="tier"
-          defaultValue={tier}
-          onChange={() => formRef.current?.requestSubmit()}
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            requestAnimationFrame(() => formRef.current?.requestSubmit());
+          }}
           className="h-9 shrink-0 rounded-lg border border-border bg-[hsl(var(--foreground)/0.02)] px-2.5 text-xs outline-none focus-visible:border-[hsl(var(--primary)/0.4)] focus-visible:ring-2 focus-visible:ring-ring/30"
         >
           {TIER_OPTIONS.map((opt) => (

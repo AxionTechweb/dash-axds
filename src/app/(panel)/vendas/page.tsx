@@ -3,8 +3,10 @@ import Link from "next/link";
 
 import { Card } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
+import { getPlatform } from "@/lib/checkout/platforms";
 import { getJourneysByUserIds, getVisitorJourneys, isIndecisive } from "@/lib/events";
 import { resolvePeriod } from "@/lib/period";
+import { getProductTierMap, tierOf } from "@/lib/product-tiers";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { getVturbByAd } from "@/lib/vturb/metrics";
@@ -134,11 +136,25 @@ async function ComprasTab({
   // `query` e getVturbByAd não dependem um do outro — rodam em paralelo.
   // getJourneysByUserIds precisa dos user_id das compras, então só começa
   // depois que `query` resolve.
-  const [{ data }, { byAd: vturbByAd }] = await Promise.all([
+  const [{ data }, { byAd: vturbByAd }, tiers, { data: platformRows }] = await Promise.all([
     query,
     getVturbByAd(areaId, from, to),
+    getProductTierMap(areaId),
+    // Plataformas que já mandaram venda pra esta área — vira o filtro.
+    supabase.from("purchases").select("plataforma").eq("area_id", areaId).limit(10_000),
   ]);
-  const rows = (data ?? []) as SaleRow[];
+  const rows = ((data ?? []) as Omit<SaleRow, "tier">[]).map((row) => ({
+    ...row,
+    tier: tierOf(tiers, row.produto),
+  }));
+  const platforms = [
+    ...new Set([
+      ...(platformRows ?? []).map((r) => r.plataforma as string).filter(Boolean),
+      ...(params.plataforma ? [params.plataforma] : []),
+    ]),
+  ]
+    .map((id) => ({ id, label: getPlatform(id)?.label ?? id }))
+    .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
 
   const userIds = rows.map((r) => r.user_id).filter((id): id is string => Boolean(id));
   const journeysMap = await getJourneysByUserIds(areaId, userIds);
@@ -190,8 +206,11 @@ async function ComprasTab({
           className={selectClass}
         >
           <option value="">Todas as plataformas</option>
-          <option value="hotmart">Hotmart</option>
-          <option value="kiwify">Kiwify</option>
+          {platforms.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
         </select>
         <button
           type="submit"

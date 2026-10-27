@@ -1,6 +1,6 @@
 import "server-only";
 
-import { classifySaleByValue } from "@/lib/sale-value-tier";
+import { getProductTierMap, tierOf } from "@/lib/product-tiers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -228,6 +228,8 @@ export async function getFunnelBase(
 type ApprovedSaleWithRecovery = {
   valor: number;
   recovered: boolean;
+  /** Tier do produto (Configurações → Tiers de produto). */
+  tier: ProductTier;
   /**
    * ad_id a creditar: da PRÓPRIA venda quando não recuperada; do ABANDONO
    * original quando recuperada (decisão do usuário — o anúncio que trouxe o
@@ -255,7 +257,7 @@ async function getApprovedSalesWithRecoveryFlag(
 ): Promise<ApprovedSaleWithRecovery[]> {
   const supabase = await createClient();
 
-  const [abandoned, approved] = await Promise.all([
+  const [abandoned, approved, tiers] = await Promise.all([
     supabase
       .from("purchases")
       .select("email, telefone, ad_id, created_at")
@@ -265,12 +267,13 @@ async function getApprovedSalesWithRecoveryFlag(
       .limit(20_000),
     supabase
       .from("purchases")
-      .select("email, telefone, ad_id, valor, created_at")
+      .select("email, telefone, ad_id, valor, produto, created_at")
       .eq("area_id", areaId)
       .eq("status", "approved")
       .gte("created_at", from.toISOString())
       .lte("created_at", to.toISOString())
       .limit(20_000),
+    getProductTierMap(areaId),
   ]);
 
   const buyerKey = (row: { email?: string | null; telefone?: string | null }) =>
@@ -298,6 +301,7 @@ async function getApprovedSalesWithRecoveryFlag(
     return {
       valor: Number(row.valor) || 0,
       recovered,
+      tier: tierOf(tiers, row.produto as string | null),
       adId: recovered ? (abandon?.adId ?? null) : ((row.ad_id as string | null) ?? null),
     };
   });
@@ -364,8 +368,9 @@ function accumulateRoasSegment(segments: RoasSegments, sale: ApprovedSaleWithRec
     return;
   }
 
-  const tier = classifySaleByValue(sale.valor);
-  if (tier === "front") {
+  // Front = VD + Outro (inclui produto ainda não classificado).
+  const tier = sale.tier;
+  if (tier === "vd" || tier === "outro") {
     segments.frontRevenue += sale.valor;
     segments.frontCount += 1;
   } else if (tier === "upsell") {
@@ -379,8 +384,8 @@ function accumulateRoasSegment(segments: RoasSegments, sale: ApprovedSaleWithRec
 
 /**
  * Segmenta as vendas aprovadas do período pra "ROAS Front" vs "ROAS Backend"
- * (pedido do usuário): Front = venda principal (R$197), Backend = Upsell
- * (R$297) + Downsell (R$97) + Recuperação de carrinho via Umbler.
+ * (pedido do usuário): Front = produtos VD ou Outro, Backend = Upsell +
+ * Downsell + Recuperação de carrinho — tier vem de Configurações → Tiers.
  */
 export async function getRoasSegments(
   areaId: string,
