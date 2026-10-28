@@ -1,7 +1,27 @@
 "use client";
 
 import { Bell, BellOff, BellRing, Loader2, X } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
+
+type Notice = { id: string; createdAt: string; title: string; body: string; url: string };
+
+const SEEN_KEY = "ax-notices-seen";
+const when = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});
+
+function readSeen(): number {
+  try {
+    return Number(localStorage.getItem(SEEN_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * Sino do topo: ativa as notificações push neste aparelho (vendas, resumo das
@@ -36,6 +56,45 @@ export function NotificationsButton() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [seen, setSeen] = useState(0);
+
+  // Avisos do sino (template aprovado…): busca ao abrir a página e a cada 2 min.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      fetch("/api/notifications")
+        .then((r) => (r.ok ? r.json() : { items: [] }))
+        .then((d: { items?: Notice[] }) => {
+          if (cancelled) return;
+          setSeen(readSeen());
+          setNotices(d.items ?? []);
+        })
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 120_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const unread = notices.filter((n) => new Date(n.createdAt).getTime() > seen).length;
+
+  const toggle = () => {
+    setOpen((o) => {
+      if (!o && notices.length > 0) {
+        const now = Date.now();
+        setSeen(now);
+        try {
+          localStorage.setItem(SEEN_KEY, String(now));
+        } catch {
+          // sem storage: o contador só não persiste
+        }
+      }
+      return !o;
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -56,7 +115,7 @@ export function NotificationsButton() {
     };
   }, []);
 
-  if (state === "loading" || state === "unsupported") return null;
+  const pushAvailable = state !== "loading" && state !== "unsupported";
 
   const enable = async () => {
     setBusy(true);
@@ -129,14 +188,19 @@ export function NotificationsButton() {
     <div className="relative">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-label="Notificações"
+        onClick={toggle}
+        aria-label={unread > 0 ? `Notificações (${unread} nova(s))` : "Notificações"}
         title="Notificações"
-        className={`inline-flex size-9 items-center justify-center rounded-md border border-border bg-[hsl(var(--muted)/0.5)] transition-colors hover:bg-muted ${
+        className={`relative inline-flex size-9 items-center justify-center rounded-md border border-border bg-[hsl(var(--muted)/0.5)] transition-colors hover:bg-muted ${
           state === "on" ? "text-primary" : "text-muted-foreground hover:text-foreground"
         }`}
       >
         <Icon className="size-4" />
+        {unread > 0 ? (
+          <span className="absolute -right-1 -top-1 flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white">
+            {unread}
+          </span>
+        ) : null}
       </button>
 
       {open ? (
@@ -146,12 +210,36 @@ export function NotificationsButton() {
           className="absolute right-0 top-11 z-50 w-72 rounded-lg border border-border bg-card p-4 text-sm shadow-lg"
         >
           <div className="mb-2 flex items-start justify-between gap-2">
-            <p className="font-medium">Notificações no celular</p>
+            <p className="font-medium">Avisos</p>
             <button type="button" onClick={() => setOpen(false)} aria-label="Fechar" className="text-muted-foreground">
               <X className="size-4" />
             </button>
           </div>
+          {notices.length === 0 ? (
+            <p className="mb-3 text-xs text-muted-foreground">Nenhum aviso ainda.</p>
+          ) : (
+            <ul className="mb-3 max-h-64 space-y-1 overflow-y-auto">
+              {notices.map((n) => (
+                <li key={n.id}>
+                  <Link
+                    href={n.url}
+                    onClick={() => setOpen(false)}
+                    className="block rounded-md px-2 py-1.5 hover:bg-muted"
+                  >
+                    <span className="block text-xs font-medium">{n.title}</span>
+                    <span className="block text-xs text-muted-foreground">{n.body}</span>
+                    <span className="block text-[10px] text-muted-foreground">
+                      {when.format(new Date(n.createdAt))}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
 
+          {!pushAvailable ? null : (
+          <div className="border-t border-border pt-3">
+          <p className="mb-2 font-medium">Notificações no celular</p>
           {state === "ios-install" ? (
             <p className="text-muted-foreground">
               No iPhone, primeiro instale o painel: Compartilhar → &quot;Adicionar à Tela de Início&quot;. Depois abra pelo
@@ -165,7 +253,7 @@ export function NotificationsButton() {
             <>
               <p className="mb-3 text-muted-foreground">
                 {state === "on"
-                  ? "Ativas neste aparelho: vendas, resumo das 18h, criativo reprovado, conta bloqueada e outros avisos."
+                  ? "Ativas neste aparelho: vendas, resumo das 18h, template aprovado, criativo reprovado, conta bloqueada e outros avisos."
                   : "Receba vendas, o resumo das 18h e os avisos importantes na barra do celular, com som."}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -201,6 +289,8 @@ export function NotificationsButton() {
                 )}
               </div>
             </>
+          )}
+          </div>
           )}
           {message ? <p className="mt-2 text-xs text-muted-foreground">{message}</p> : null}
         </div>

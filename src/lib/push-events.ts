@@ -2,6 +2,7 @@ import "server-only";
 
 import { formatCurrency } from "@/lib/format";
 import { getAreaInsights } from "@/lib/meta/client";
+import { getMetaWaIntegration, listMetaTemplates } from "@/lib/meta-wa/client";
 import { getTodayYmdBRT } from "@/lib/period";
 import { sendPush } from "@/lib/push";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -153,6 +154,81 @@ export async function sendDailySummary(areaId: string): Promise<{ sent: boolean;
     tag: `daily-summary-${ymd}`,
   });
   return { sent: true, profit };
+}
+
+/* ------------------------------------------- avisos dentro do painel (sino) */
+
+/**
+ * Aviso que aparece no sino do painel. Guardado no audit_log (que todo usuário
+ * do painel já lê) com action "notify.inapp" — sem tabela nova.
+ */
+export async function notifyInApp(
+  areaId: string,
+  notice: { title: string; body: string; url: string },
+): Promise<void> {
+  await createAdminClient().from("audit_log").insert({
+    area_id: areaId,
+    actor_email: null,
+    action: "notify.inapp",
+    target_type: "notification",
+    details: notice,
+  });
+}
+
+/* ------------------------------------------ template do WhatsApp aprovado */
+
+const templateKey = (name: string, language: string) => `${name}|${language}`;
+
+/** Marca o template como "em análise" — só avisamos quem passou por aqui. */
+export async function markTemplatePending(areaId: string, name: string, language: string) {
+  await claimOnce(areaId, `tpl_pending:${templateKey(name, language)}`);
+}
+
+/**
+ * Chamado pelo cron de alertas: compara o status na Meta com o que já foi
+ * avisado. Template que estava em análise e virou APROVADO (ou REPROVADO)
+ * gera push no celular + aviso no sino, uma única vez.
+ */
+export async function checkTemplateStatus(areaId: string): Promise<void> {
+  const integration = await getMetaWaIntegration(areaId);
+  if (!integration) return;
+  const { templates, error } = await listMetaTemplates(integration);
+  if (error) return;
+
+  const admin = createAdminClient();
+  const { data: pendingRows } = await admin
+    .from("alert_state")
+    .select("alert_type")
+    .eq("area_id", areaId)
+    .like("alert_type", "tpl_pending:%");
+  const pending = new Set((pendingRows ?? []).map((r) => (r.alert_type as string).slice(12)));
+
+  for (const t of templates) {
+    const key = templateKey(t.name, t.language);
+    if (t.status === "PENDING") {
+      if (!pending.has(key)) await markTemplatePending(areaId, t.name, t.language);
+      continue;
+    }
+    if (!pending.has(key)) continue;
+
+    if (t.status === "APPROVED" && (await claimOnce(areaId, `tpl_approved:${key}`))) {
+      const notice = {
+        title: "✅ Template aprovado",
+        body: `"${t.name}" foi aprovado pela Meta e já pode ser usado nos disparos.`,
+        url: "/disparos/templates",
+      };
+      await sendPush({ ...notice, tag: `tpl-${key}` });
+      await notifyInApp(areaId, notice);
+    } else if (t.status === "REJECTED" && (await claimOnce(areaId, `tpl_rejected:${key}`))) {
+      const notice = {
+        title: "❌ Template reprovado",
+        body: `"${t.name}" foi reprovado pela Meta${t.rejectedReason ? ` (${t.rejectedReason})` : ""}.`,
+        url: "/disparos/templates",
+      };
+      await sendPush({ ...notice, tag: `tpl-${key}` });
+      await notifyInApp(areaId, notice);
+    }
+  }
 }
 
 /* --------------------------------------- sem venda há 2h com anúncio gastando */

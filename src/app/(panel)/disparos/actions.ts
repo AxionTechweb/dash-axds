@@ -13,6 +13,7 @@ import {
 import { DISPATCH_TRIGGERS, PARAM_KEYS } from "@/lib/meta-wa/constants";
 import { processDispatchQueue, resolveParams } from "@/lib/meta-wa/dispatch";
 import { toMetaPayload, validateTemplate, type TemplateSpec } from "@/lib/meta-wa/template-spec";
+import { markTemplatePending } from "@/lib/push-events";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type FormState = { error?: string; ok?: string };
@@ -452,6 +453,10 @@ export async function createTemplateAction(spec: TemplateSpec): Promise<FormStat
 
   const result = await createMetaTemplate(integration, toMetaPayload(clean));
   if (!result.ok) return { error: `A Meta recusou: ${result.error}` };
+  // Garante o aviso de "aprovado" mesmo se a Meta aprovar antes do próximo cron.
+  if (result.status !== "APPROVED") {
+    await markTemplatePending(ctx.area.id, clean.name, clean.language);
+  }
 
   await audit(ctx.area.id, ctx.user.email, "dispatch.template_create", {
     template: clean.name,

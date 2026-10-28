@@ -4,7 +4,7 @@ import { accountStatusLabel } from "@/lib/meta/accounts";
 import { getAccountStatus, getAdAccounts, getAdReviewStatuses } from "@/lib/meta/client";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPush } from "@/lib/push";
-import { checkNoSalesPush } from "@/lib/push-events";
+import { checkNoSalesPush, checkTemplateStatus } from "@/lib/push-events";
 import { notifyArea } from "@/lib/whatsapp/client";
 
 /**
@@ -305,6 +305,12 @@ export async function runAlertsForAllAreas(): Promise<AlertsAreaResult[]> {
       await checkNoSalesPush(areaId);
     } catch (err) {
       errors.push(`no_sales_push: ${err instanceof Error ? err.message : "erro desconhecido"}`);
+    }
+
+    try {
+      await checkTemplateStatus(areaId);
+    } catch (err) {
+      errors.push(`template_status: ${err instanceof Error ? err.message : "erro desconhecido"}`);
     }
 
     try {
