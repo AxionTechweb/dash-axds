@@ -5,12 +5,14 @@ import { revalidatePath } from "next/cache";
 import { getActiveArea } from "@/lib/areas";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  createMetaTemplate,
   getMetaWaIntegration,
   normalizePhone,
   sendMetaTemplate,
 } from "@/lib/meta-wa/client";
 import { DISPATCH_TRIGGERS, PARAM_KEYS } from "@/lib/meta-wa/constants";
 import { processDispatchQueue, resolveParams } from "@/lib/meta-wa/dispatch";
+import { toMetaPayload, validateTemplate, type TemplateSpec } from "@/lib/meta-wa/template-spec";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type FormState = { error?: string; ok?: string };
@@ -421,4 +423,163 @@ export async function removeOptout(
 
   revalidatePath("/disparos");
   return { ok: "Número liberado." };
+}
+
+/* --------------------------------------------------------------- templates */
+
+/** Cria o template na Meta (API oficial). Fica "em análise" até ~24h. */
+export async function createTemplateAction(spec: TemplateSpec): Promise<FormState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const clean: TemplateSpec = {
+    ...spec,
+    name: String(spec.name ?? "").trim(),
+    language: /^[a-z]{2}(_[A-Z]{2})?$/.test(spec.language) ? spec.language : "pt_BR",
+    category: spec.category === "MARKETING" ? "MARKETING" : "UTILITY",
+    allowCategoryChange: Boolean(spec.allowCategoryChange),
+    headerText: String(spec.headerText ?? ""),
+    body: String(spec.body ?? ""),
+    footer: String(spec.footer ?? ""),
+    variables: Array.isArray(spec.variables) ? spec.variables : [],
+    buttons: Array.isArray(spec.buttons) ? spec.buttons : [],
+  };
+  const invalid = validateTemplate(clean);
+  if (invalid) return { error: invalid };
+
+  const integration = await getMetaWaIntegration(ctx.area.id);
+  if (!integration) return { error: "Conecte a API oficial em Integrações." };
+
+  const result = await createMetaTemplate(integration, toMetaPayload(clean));
+  if (!result.ok) return { error: `A Meta recusou: ${result.error}` };
+
+  await audit(ctx.area.id, ctx.user.email, "dispatch.template_create", {
+    template: clean.name,
+    category: clean.category,
+  });
+  revalidatePath("/disparos/templates");
+  revalidatePath("/disparos");
+  return {
+    ok:
+      result.status === "APPROVED"
+        ? `Template "${clean.name}" aprovado.`
+        : `Template "${clean.name}" enviado para a Meta — em análise (até 24h).`,
+  };
+}
+
+/* ------------------------------------------------- campanha (passo a passo) */
+
+export type CampaignContact = { telefone: string; values: Record<string, string> };
+
+/** Contatos do próprio painel para o passo "Contatos" da campanha. */
+export async function loadPanelContacts(
+  audience: "leads" | "buyers",
+): Promise<{ contacts: CampaignContact[]; error?: string }> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { contacts: [], error: ctx.error };
+
+  const fd = new FormData();
+  fd.set("audience", audience);
+  const result = await resolveAudience(ctx.area.id, fd);
+  if ("error" in result) return { contacts: [], error: result.error };
+
+  return {
+    contacts: result.targets.map((t) => ({
+      telefone: t.telefone,
+      values: {
+        Nome: t.nome ?? "",
+        Telefone: t.telefone,
+        "E-mail": t.email ?? "",
+        Produto: t.produto ?? "",
+      },
+    })),
+  };
+}
+
+/** Variável {{n}} da campanha: coluna da lista ou texto fixo. */
+export type VariableMapping = { kind: "column" | "text"; value: string };
+
+/** A Meta rejeita parâmetro vazio, com quebra de linha ou 4+ espaços. */
+function cleanParam(raw: string | undefined, fallback: string): string {
+  const value = (raw ?? "").replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim().slice(0, 60);
+  return value || fallback;
+}
+
+/**
+ * Enfileira a campanha montada no passo a passo (lista do painel ou arquivo).
+ * O servidor normaliza os telefones de novo, tira duplicados e bloqueados e
+ * exige que o total confirmado bata com o total real.
+ */
+export async function createListCampaign(input: {
+  label: string;
+  template: string;
+  mapping: VariableMapping[];
+  contacts: CampaignContact[];
+  confirmTotal: number;
+}): Promise<FormState & { total?: number }> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const template = parseTemplate(String(input.template ?? ""));
+  if (!template) return { error: "Escolha um template aprovado." };
+
+  const integration = await getMetaWaIntegration(ctx.area.id);
+  if (!integration) return { error: "Conecte a API oficial em Integrações." };
+
+  const mapping = (Array.isArray(input.mapping) ? input.mapping : []).slice(0, 10);
+  if (mapping.some((m) => (m.kind !== "column" && m.kind !== "text") || !m.value?.trim())) {
+    return { error: "Defina o valor de todas as variáveis." };
+  }
+
+  const unique = new Map<string, Record<string, string>>();
+  for (const contact of Array.isArray(input.contacts) ? input.contacts : []) {
+    const phone = normalizePhone(String(contact?.telefone ?? ""));
+    if (phone && !unique.has(phone)) unique.set(phone, contact.values ?? {});
+  }
+
+  const admin = createAdminClient();
+  const { data: optouts } = await admin
+    .from("wa_optouts")
+    .select("telefone")
+    .eq("area_id", ctx.area.id);
+  for (const o of optouts ?? []) unique.delete(o.telefone as string);
+
+  const total = unique.size;
+  if (total === 0) return { error: "Nenhum contato válido na lista." };
+  if (total > MAX_CAMPAIGN) {
+    return { error: `${total} contatos — o limite por campanha é ${MAX_CAMPAIGN}. Divida a lista.` };
+  }
+  if (Number(input.confirmTotal) !== total) {
+    return { error: `Confirme o total certo: são ${total} contatos.`, total };
+  }
+
+  const label = String(input.label ?? "").trim().slice(0, 80) || "campanha";
+  const { error } = await admin.from("wa_dispatch_log").insert(
+    [...unique.entries()].map(([telefone, values]) => ({
+      area_id: ctx.area.id,
+      trigger: "manual",
+      campaign_label: label,
+      telefone,
+      template_name: template.name,
+      template_language: template.language,
+      params: mapping.map((m) =>
+        m.kind === "text" ? cleanParam(m.value, "-") : cleanParam(values[m.value], "-"),
+      ),
+    })),
+  );
+  if (error) return { error: `Falha ao enfileirar: ${error.message}` };
+
+  await audit(ctx.area.id, ctx.user.email, "dispatch.campaign", {
+    label,
+    audience: "lista",
+    template: template.name,
+    total,
+  });
+
+  const first = await processDispatchQueue({ areaId: ctx.area.id, limit: 50, maxMs: 40_000 });
+  revalidatePath("/disparos");
+  return {
+    ok: `${total} na fila · primeiro lote: ${first.sent} enviados, ${first.failed} falhas, ${first.skipped} pulados. O resto sai pela fila automática.`,
+    total,
+  };
 }

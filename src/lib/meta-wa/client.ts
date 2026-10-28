@@ -129,6 +129,11 @@ export type MetaWaTemplate = {
   body: string;
   /** Quantidade de variáveis do corpo. */
   paramCount: number;
+  header: string;
+  footer: string;
+  buttons: { type: string; text: string }[];
+  /** Motivo da Meta quando REJECTED. */
+  rejectedReason: string | null;
 };
 
 type RawTemplate = {
@@ -136,7 +141,13 @@ type RawTemplate = {
   language?: string;
   status?: string;
   category?: string;
-  components?: { type?: string; text?: string }[];
+  rejected_reason?: string;
+  components?: {
+    type?: string;
+    format?: string;
+    text?: string;
+    buttons?: { type?: string; text?: string }[];
+  }[];
 };
 
 export async function listMetaTemplates(
@@ -144,7 +155,7 @@ export async function listMetaTemplates(
 ): Promise<{ templates: MetaWaTemplate[]; error: string | null }> {
   const templates: MetaWaTemplate[] = [];
   let url: string | null =
-    `${META_GRAPH_BASE}/${integration.wabaId}/message_templates?fields=name,language,status,category,components&limit=100`;
+    `${META_GRAPH_BASE}/${integration.wabaId}/message_templates?fields=name,language,status,category,components,rejected_reason&limit=100`;
 
   try {
     // Paginação por cursor, com teto de segurança.
@@ -171,6 +182,14 @@ export async function listMetaTemplates(
           category: raw.category ?? "",
           body: bodyText,
           paramCount: new Set(bodyText.match(/\{\{\d+\}\}/g) ?? []).size,
+          header:
+            raw.components?.find((c) => c.type === "HEADER" && c.format === "TEXT")?.text ?? "",
+          footer: raw.components?.find((c) => c.type === "FOOTER")?.text ?? "",
+          buttons: (raw.components?.find((c) => c.type === "BUTTONS")?.buttons ?? []).map(
+            (b) => ({ type: b.type ?? "", text: b.text ?? "" }),
+          ),
+          rejectedReason:
+            raw.rejected_reason && raw.rejected_reason !== "NONE" ? raw.rejected_reason : null,
         });
       }
       url = body?.paging?.next ?? null;
@@ -181,6 +200,31 @@ export async function listMetaTemplates(
       templates,
       error: err instanceof Error ? err.message : "falha na requisição",
     };
+  }
+}
+
+/** Envia um template novo para aprovação da Meta (fica PENDING até ~24h). */
+export async function createMetaTemplate(
+  integration: Pick<MetaWaIntegration, "accessToken" | "wabaId">,
+  payload: Record<string, unknown>,
+): Promise<{ ok: true; status: string } | { ok: false; error: string }> {
+  try {
+    const response = await fetch(`${META_GRAPH_BASE}/${integration.wabaId}/message_templates`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${integration.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+    const body = (await response.json().catch(() => null)) as
+      | (GraphError & { status?: string })
+      | null;
+    if (!response.ok) return { ok: false, error: graphMessage(body, response.status) };
+    return { ok: true, status: body?.status ?? "PENDING" };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "falha na requisição" };
   }
 }
 

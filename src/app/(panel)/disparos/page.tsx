@@ -1,3 +1,4 @@
+import { FileText, Send } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -8,7 +9,6 @@ import { DISPATCH_TRIGGERS } from "@/lib/meta-wa/constants";
 import { createClient } from "@/lib/supabase/server";
 
 import {
-  CampaignForm,
   OptoutForm,
   ProcessQueueButton,
   RuleForm,
@@ -114,6 +114,24 @@ export default async function DisparosPage() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="display-title text-3xl text-foreground">Disparos</h2>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/disparos/templates"
+            className="inline-flex h-9 items-center gap-2 rounded-full border border-border px-4 text-sm hover:bg-[hsl(var(--foreground)/0.04)]"
+          >
+            <FileText className="size-4" /> Templates
+          </Link>
+          <Link
+            href="/disparos/nova"
+            className="inline-flex h-9 items-center gap-2 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground"
+          >
+            <Send className="size-4" /> Novo envio de campanha
+          </Link>
+        </div>
+      </div>
+
       {templatesError ? (
         <Card className="p-4">
           <p role="alert" className="text-sm text-destructive">
@@ -124,8 +142,11 @@ export default async function DisparosPage() {
         <Card className="p-4">
           <p className="text-sm text-muted-foreground">
             Nenhum template aprovado ainda
-            {pendingCount > 0 ? ` (${pendingCount} em análise)` : ""}. Crie e envie para aprovação
-            no WhatsApp Manager da Meta; quando aprovar, ele aparece aqui.
+            {pendingCount > 0 ? ` (${pendingCount} em análise)` : ""}.{" "}
+            <Link href="/disparos/templates" className="text-primary underline underline-offset-2">
+              Criar template
+            </Link>{" "}
+            — quando a Meta aprovar, ele aparece aqui.
           </p>
         </Card>
       ) : null}
@@ -165,10 +186,21 @@ export default async function DisparosPage() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardLabel>Disparo manual em massa</CardLabel>
-            <span className="micro-label">leads · compradores · lista</span>
+            <CardLabel>Envio de campanha</CardLabel>
+            <span className="micro-label">painel · arquivo .csv / .vcf</span>
           </CardHeader>
-          <CampaignForm templates={approved} />
+          <div className="space-y-3 p-5">
+            <p className="text-sm text-muted-foreground">
+              Passo a passo: escolha os contatos (do painel ou de um arquivo), o template aprovado,
+              confira o resumo e envie. Limite de 500 contatos por campanha.
+            </p>
+            <Link
+              href="/disparos/nova"
+              className="inline-flex h-9 items-center gap-2 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground"
+            >
+              <Send className="size-4" /> Novo envio de campanha
+            </Link>
+          </div>
         </Card>
 
         <div className="space-y-4">
