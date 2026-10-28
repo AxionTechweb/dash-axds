@@ -197,22 +197,27 @@ async function visitorName(
   telefone: string | null,
 ): Promise<string | null> {
   try {
-    const filters = [
-      userId ? `user_id.eq.${userId}` : null,
-      email ? `email.eq.${email}` : null,
-      telefone ? `telefone.eq.${telefone}` : null,
-    ].filter((f): f is string => f !== null);
-    if (filters.length === 0) return null;
-
-    const { data } = await createAdminClient()
-      .from("visitors")
-      .select("nome")
-      .eq("area_id", areaId)
-      .not("nome", "is", null)
-      .or(filters.join(","))
-      .limit(1)
-      .maybeSingle();
-    return (data?.nome as string | null) ?? null;
+    // Uma consulta .eq por campo, em ordem de confiança. Nada de .or() com
+    // interpolação: sck/e-mail vêm do comprador e virariam filtro PostgREST.
+    const admin = createAdminClient();
+    const lookups: [string, string | null][] = [
+      ["user_id", userId],
+      ["email", email],
+      ["telefone", telefone],
+    ];
+    for (const [column, value] of lookups) {
+      if (!value) continue;
+      const { data } = await admin
+        .from("visitors")
+        .select("nome")
+        .eq("area_id", areaId)
+        .eq(column, value)
+        .not("nome", "is", null)
+        .limit(1)
+        .maybeSingle();
+      if (data?.nome) return data.nome as string;
+    }
+    return null;
   } catch {
     return null;
   }

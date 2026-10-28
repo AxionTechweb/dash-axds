@@ -15,7 +15,9 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") ?? "/dashboard";
+  // Só caminho interno: "//host" ou "/\host" levariam para outro domínio.
+  const rawNext = searchParams.get("next") ?? "/dashboard";
+  const next = /^\/(?![/\\])/.test(rawNext) ? rawNext : "/dashboard";
 
   const supabase = await createClient();
 

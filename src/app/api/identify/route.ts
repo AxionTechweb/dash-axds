@@ -67,11 +67,16 @@ export async function POST(request: Request) {
   const userId =
     incoming && isValidVisitorId(incoming) ? incoming : newVisitorId();
 
+  // E-mail com formato inválido não é gravado: ele é reutilizado em consultas
+  // e mensagens depois, então só entra o que parece e-mail de verdade.
+  const rawEmail = norm(body.email);
+  const email = rawEmail && /^[^\s@,()]+@[^\s@,()]+\.[^\s@,()]+$/.test(rawEmail) ? rawEmail : null;
+
   const admin = createAdminClient();
   const { error } = await admin.rpc("identify_visitor", {
     p_area_id: area.id,
     p_user_id: userId,
-    p_email: norm(body.email),
+    p_email: email,
     p_telefone: norm(body.telefone),
     p_nome: norm(body.nome),
     p_utm_source: norm(body.utm_source),
@@ -102,7 +107,7 @@ export async function POST(request: Request) {
         trigger: "lead",
         sourceRef: userId,
         telefone,
-        context: { nome: norm(body.nome), email: norm(body.email) },
+        context: { nome: norm(body.nome), email },
       });
       if (ready) await processDispatchQueue({ areaId: area.id, limit: 20, maxMs: 20_000 });
     });

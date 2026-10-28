@@ -25,9 +25,27 @@ export type DispatchContext = {
   moeda?: string | null;
 };
 
+/**
+ * Nome vindo de formulário/checkout vai DENTRO de uma mensagem oficial da
+ * marca: só letras, espaço, apóstrofo, ponto e hífen, até 40 caracteres —
+ * impede alguém de enfiar link ou texto arbitrário no template.
+ */
+function safeName(raw: string | null | undefined): string {
+  return (raw ?? "")
+    .replace(/[^\p{L}\s'.-]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 40);
+}
+
+const EMAIL_RE = /^[^\s@,()]+@[^\s@,()]+\.[^\s@,()]+$/;
+
+/** Máximo de follow-ups de lead enfileirados por área a cada hora. */
+const LEAD_DISPATCH_HOURLY_CAP = 60;
+
 /** Variáveis do corpo na ordem escolhida na regra. Meta rejeita valor vazio. */
 export function resolveParams(keys: string[], ctx: DispatchContext): string[] {
-  const nome = ctx.nome?.trim() || "";
+  const nome = safeName(ctx.nome);
   return keys.map((key) => {
     switch (key) {
       case "primeiro_nome":
@@ -40,8 +58,10 @@ export function resolveParams(keys: string[], ctx: DispatchContext): string[] {
         return typeof ctx.valor === "number"
           ? formatCurrency(ctx.valor, ctx.moeda || "BRL")
           : "-";
-      case "email":
-        return ctx.email?.trim() || "-";
+      case "email": {
+        const email = ctx.email?.trim() ?? "";
+        return EMAIL_RE.test(email) && email.length <= 120 ? email : "-";
+      }
       default:
         return "-";
     }
@@ -72,6 +92,21 @@ export async function enqueueDispatch(input: EnqueueInput): Promise<boolean> {
       .eq("enabled", true)
       .maybeSingle();
     if (!rule) return false;
+
+    // Lead vem de endpoint público (token da área não é segredo): teto por
+    // área/hora para ninguém usar o número oficial como disparador em massa.
+    if (input.trigger === "lead") {
+      const { count } = await admin
+        .from("wa_dispatch_log")
+        .select("id", { count: "exact", head: true })
+        .eq("area_id", input.areaId)
+        .eq("trigger", "lead")
+        .gte("created_at", new Date(Date.now() - 3_600_000).toISOString());
+      if ((count ?? 0) >= LEAD_DISPATCH_HOURLY_CAP) {
+        console.warn("[meta-wa] teto de leads/hora atingido na área", input.areaId);
+        return false;
+      }
+    }
 
     const delay = rule.delay_minutes as number;
     const { error } = await admin.from("wa_dispatch_log").insert({
@@ -170,17 +205,21 @@ async function skipReason(row: {
       .eq("user_id", row.source_ref)
       .maybeSingle();
 
-    let query = admin
-      .from("purchases")
-      .select("id")
-      .eq("area_id", row.area_id)
-      .eq("status", "approved")
-      .limit(1);
-    query = visitor?.email
-      ? query.or(`user_id.eq.${row.source_ref},email.eq.${visitor.email}`)
-      : query.eq("user_id", row.source_ref);
-    const { data: bought } = await query;
-    if (bought && bought.length > 0) return "a pessoa já comprou";
+    // Duas consultas com .eq em vez de .or(`...${email}`): o e-mail vem do
+    // formulário público e, interpolado, viraria filtro PostgREST arbitrário.
+    const approved = () =>
+      admin
+        .from("purchases")
+        .select("id")
+        .eq("area_id", row.area_id)
+        .eq("status", "approved")
+        .limit(1);
+    const { data: byUser } = await approved().eq("user_id", row.source_ref);
+    if (byUser && byUser.length > 0) return "a pessoa já comprou";
+    if (visitor?.email) {
+      const { data: byEmail } = await approved().eq("email", visitor.email as string);
+      if (byEmail && byEmail.length > 0) return "a pessoa já comprou";
+    }
   }
 
   return null;

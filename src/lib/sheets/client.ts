@@ -3,6 +3,7 @@ import "server-only";
 import { google, sheets_v4 } from "googleapis";
 
 import { decryptSecret } from "@/lib/crypto";
+import { parseServiceAccount } from "@/lib/google-credentials";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -26,8 +27,18 @@ export type SheetsIntegration = {
 };
 
 function authFor(serviceAccountJson: string, scopes: string[]) {
-  const credentials = JSON.parse(serviceAccountJson) as Record<string, unknown>;
+  const credentials = parseServiceAccount(serviceAccountJson);
   return new google.auth.GoogleAuth({ credentials, scopes });
+}
+
+/**
+ * Texto de fora do painel (nome de anúncio/campanha da Meta) gravado com
+ * USER_ENTERED: o apóstrofo inicial faz o Sheets tratar como texto puro, então
+ * "=IMAGE(...)" num nome não vira fórmula na planilha. `force` serve para ids
+ * numéricos longos, que o Sheets arredondaria.
+ */
+export function asSheetText(value: string, force = false): string {
+  return force || /^[=+\-@]/.test(value) ? `'${value}` : value;
 }
 
 function extractGoogleError(err: unknown): string {

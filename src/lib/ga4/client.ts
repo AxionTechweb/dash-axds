@@ -3,6 +3,7 @@ import "server-only";
 import { google } from "googleapis";
 
 import { decryptSecret } from "@/lib/crypto";
+import { parseServiceAccount } from "@/lib/google-credentials";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { GA4_API_BASE, GA4_SCOPE } from "./config";
@@ -29,7 +30,7 @@ function extractGoogleError(err: unknown): string {
 }
 
 async function getAccessToken(serviceAccountJson: string): Promise<string> {
-  const credentials = JSON.parse(serviceAccountJson) as Record<string, unknown>;
+  const credentials = parseServiceAccount(serviceAccountJson);
   const auth = new google.auth.GoogleAuth({ credentials, scopes: [GA4_SCOPE] });
   const client = await auth.getClient();
   const { token } = await client.getAccessToken();

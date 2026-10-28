@@ -4,7 +4,7 @@ import type { sheets_v4 } from "googleapis";
 
 import type { DailyCampaignSnapshot } from "@/lib/reports/daily";
 
-import { ensureTabFromTemplate, getDailySheetsIntegration } from "./client";
+import { asSheetText, ensureTabFromTemplate, getDailySheetsIntegration } from "./client";
 
 /**
  * Escreve UM checkpoint intradia na aba "dd.mm.yyyy - campanha" (duplicada
@@ -149,7 +149,7 @@ export async function writeDailyCheckpointToSheet(
           spreadsheetId: integration.spreadsheetId,
           range: `'${tabName}'!C13`,
           valueInputOption: "USER_ENTERED",
-          requestBody: { values: [[snapshot.campaignName]] },
+          requestBody: { values: [[asSheetText(snapshot.campaignName)]] },
         });
       } catch (err) {
         console.error("[sheets/daily] falha ao preencher C13 (campanha):", err);

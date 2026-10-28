@@ -2,7 +2,7 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import { ensureTabFromTemplate, getSheetsIntegration } from "./client";
+import { asSheetText, ensureTabFromTemplate, getSheetsIntegration } from "./client";
 
 /**
  * Escreve o relatório semanal numa aba NOVA da planilha (uma por semana),
@@ -287,15 +287,15 @@ function fieldValue(
     case "week_end":
       return formatYmd(row.week_end);
     case "account_label":
-      return row.account_label ?? "";
+      return asSheetText(row.account_label ?? "");
     case "ad_id_col":
-      return row.ad_id;
+      return asSheetText(row.ad_id, true);
     case "ad_name":
-      return row.ad_name ?? row.ad_id;
+      return asSheetText(row.ad_name ?? row.ad_id);
     case "campaign_name":
-      return row.campaign_name ?? "";
+      return asSheetText(row.campaign_name ?? "");
     case "status":
-      return row.status ?? "";
+      return asSheetText(row.status ?? "");
     case "spend":
       return round2(row.spend);
     case "spend_usd":

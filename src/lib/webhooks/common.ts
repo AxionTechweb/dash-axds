@@ -262,6 +262,24 @@ export async function savePurchase(input: PurchaseInput): Promise<void> {
 
   const admin = createAdminClient();
 
+  // transaction_id é único na tabela inteira, mas cada webhook só prova a
+  // posse do segredo de UMA (área, plataforma). Se o id já pertence a outra
+  // área ou plataforma, recusa — senão o upsert sobrescreveria (e mudaria de
+  // dono) uma venda que esse remetente nunca registrou.
+  const { data: existing } = await admin
+    .from("purchases")
+    .select("area_id, plataforma")
+    .eq("transaction_id", clean.transactionId)
+    .maybeSingle();
+  if (
+    existing &&
+    (existing.area_id !== clean.areaId || existing.plataforma !== clean.plataforma)
+  ) {
+    throw new Error(
+      `Payload de compra inválido: transaction_id já registrado por outra área/plataforma (${existing.plataforma}).`,
+    );
+  }
+
   const { visitor, match } = await matchVisitor(
     clean.areaId,
     clean.userId,

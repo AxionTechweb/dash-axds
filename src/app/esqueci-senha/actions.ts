@@ -11,8 +11,18 @@ const ForgotPasswordSchema = z.object({
   email: z.email("E-mail inválido."),
 });
 
-/** Base pública da instância — mesmo helper usado em Integrações. */
+/**
+ * Base pública da instância para o link do e-mail. NUNCA vem dos headers da
+ * requisição em produção: X-Forwarded-Host é controlável por quem pede o reset
+ * e mandaria o código de recuperação para outro domínio.
+ */
 async function getBaseUrl(): Promise<string> {
+  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  // Vercel injeta o domínio de produção do projeto.
+  const vercelProd = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (vercelProd) return `https://${vercelProd}`;
+  // Só em dev local (sem Vercel) cai no host da requisição.
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto =
