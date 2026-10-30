@@ -29,16 +29,33 @@ function subscribe(onChange: () => void) {
   };
 }
 
+// useSyncExternalStore exige o MESMO objeto enquanto o valor não muda — antes
+// cada leitura fazia JSON.parse e devolvia objeto novo, o React entendia como
+// mudança infinita e a página quebrava ("Maximum update depth exceeded") pra
+// quem já tinha salvo a personalização de colunas. Cache pela string crua.
+let cachedRaw: string | null = null;
+let cachedPrefs: StoredPrefs | null = null;
+
 function readStored(): StoredPrefs | null {
+  let raw: string | null = null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredPrefs>;
-    if (!Array.isArray(parsed.order) || !Array.isArray(parsed.hidden)) return null;
-    return { order: parsed.order, hidden: parsed.hidden };
+    raw = localStorage.getItem(STORAGE_KEY);
   } catch {
     return null;
   }
+  if (raw === cachedRaw) return cachedPrefs;
+  cachedRaw = raw;
+  cachedPrefs = null;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoredPrefs>;
+    if (Array.isArray(parsed.order) && Array.isArray(parsed.hidden)) {
+      cachedPrefs = { order: parsed.order, hidden: parsed.hidden };
+    }
+  } catch {
+    // preferência corrompida — volta ao default
+  }
+  return cachedPrefs;
 }
 
 /** No servidor (e enquanto não há preferência salva) usa o default do chamador. */
