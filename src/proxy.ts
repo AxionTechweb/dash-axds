@@ -11,7 +11,8 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/env";
  *  2. Proteger as rotas do painel — sem sessão, redireciona para /login.
  *
  * Rotas públicas: /login, /setup, o fluxo de redefinição de senha
- * (/esqueci-senha, /auth/confirm, /redefinir-senha) e /api/* (os endpoints
+ * (/esqueci-senha, /auth/confirm, /redefinir-senha), as páginas públicas de
+ * texto (/docs, /privacidade) e /api/* (os endpoints
  * públicos de captura e webhooks fazem a própria validação: zod + rate
  * limit + CORS/assinatura).
  */
@@ -22,6 +23,8 @@ const PUBLIC_PATHS = [
   "/esqueci-senha",
   "/auth/confirm",
   "/redefinir-senha",
+  "/docs",
+  "/privacidade",
 ];
 
 function isPublic(pathname: string): boolean {

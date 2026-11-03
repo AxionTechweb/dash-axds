@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { Brand } from "@/components/brand";
 import { getBranding } from "@/lib/branding";
@@ -36,6 +37,15 @@ export default async function LoginPage() {
 
         <p className="micro-label mt-4 text-center">
           Cadastro público desativado
+        </p>
+        <p className="mt-3 text-center text-xs text-muted-foreground">
+          <Link href="/docs" className="hover:text-foreground">
+            Documentação
+          </Link>
+          {" · "}
+          <Link href="/privacidade" className="hover:text-foreground">
+            Política de Privacidade
+          </Link>
         </p>
       </div>
     </main>
