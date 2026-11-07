@@ -70,8 +70,8 @@ export const ENDPOINTS: Endpoint[] = [
     response: {
       status: 200,
       example: {
-        area: { id: "aa73331a-36fd-4d04-9149-02869e645eef", name: "Principal" },
-        whatsapp: { connected: true, display_phone: "+55 47 9700-8701", waba_id: "1101579022866058", phone_number_id: "1384088934788149" },
+        area: { id: "3b2f1c9e-7a44-4d1b-9c55-1e0f6a2d8b70", name: "Principal" },
+        whatsapp: { connected: true, display_phone: "+55 11 90000-0000", waba_id: "123456789012345", phone_number_id: "109876543210987" },
         limits: { requests_per_minute: 120, campaign_max_messages: 500 },
       },
     },
@@ -364,7 +364,7 @@ export const WEBHOOK_ENVELOPE_EXAMPLE = {
   event_id: "message.sent:7f3c2a10-5b1e-4f2a-9d0e-2c6b8a1f4e55",
   version: "1",
   event: "message.sent",
-  area_id: "aa73331a-36fd-4d04-9149-02869e645eef",
+  area_id: "3b2f1c9e-7a44-4d1b-9c55-1e0f6a2d8b70",
   created_at: "2026-11-07T15:00:01.300Z",
   data: MESSAGE_EXAMPLE,
 };
