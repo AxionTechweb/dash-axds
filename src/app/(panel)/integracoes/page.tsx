@@ -5,9 +5,13 @@ import { headers } from "next/headers";
 import { Card, CardHeader, CardLabel } from "@/components/ui/card";
 import { getActiveArea } from "@/lib/areas";
 import { getPlatform } from "@/lib/checkout/platforms";
+import { WEBHOOK_EVENTS } from "@/lib/public-api/events";
+import { readWebhookConfig } from "@/lib/public-api/webhook-config";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
+import { ApiPublicConnect } from "./api-public-connect";
 import { CheckoutConnect } from "./checkout-connect";
 import { DailySheetsConnect } from "./daily-sheets-connect";
 import { Ga4Connect } from "./ga4-connect";
@@ -130,6 +134,18 @@ export default async function IntegracoesPage() {
   const ga4On = Boolean(ga4Row?.service_account_json && ga4Row?.enabled !== false);
   const whatsappOn = Boolean(whatsappRow?.api_key && whatsappRow?.enabled !== false);
   const metaWaOn = Boolean(metaWaRow?.access_token && metaWaRow?.enabled !== false);
+
+  // Credenciais da API pública: sem policy para o browser, lidas pelo servidor.
+  const [{ data: apiCred }, apiWebhook] = metaWaOn
+    ? await Promise.all([
+        createAdminClient()
+          .from("api_credentials")
+          .select("api_key, last_used_at")
+          .eq("area_id", activeArea.id)
+          .maybeSingle(),
+        readWebhookConfig(activeArea.id),
+      ])
+    : [{ data: null }, null];
 
   const metaOn = accounts.some((a) => a.hasToken);
   const checkoutOn = configured.length > 0;
@@ -362,6 +378,25 @@ export default async function IntegracoesPage() {
           phoneNumberId={(metaWaRow?.phone_number_id as string) ?? null}
           displayPhone={(metaWaRow?.display_phone as string) ?? null}
         />
+        {metaWaOn ? (
+          <ApiPublicConnect
+            apiKey={(apiCred?.api_key as string) ?? null}
+            lastUsedAt={(apiCred?.last_used_at as string) ?? null}
+            webhook={
+              apiWebhook
+                ? {
+                    url: apiWebhook.url,
+                    events: apiWebhook.events,
+                    enabled: apiWebhook.enabled,
+                    secret: apiWebhook.secret,
+                    failures: apiWebhook.consecutive_failures,
+                  }
+                : null
+            }
+            events={WEBHOOK_EVENTS.map((e) => ({ id: e.id, label: e.label }))}
+            baseUrl={baseUrl}
+          />
+        ) : null}
       </Card>
     </div>
   );

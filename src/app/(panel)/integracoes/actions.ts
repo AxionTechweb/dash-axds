@@ -16,6 +16,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { testGa4Connection } from "@/lib/ga4/client";
 import { testSheetsConnection } from "@/lib/sheets/client";
 import { testMetaWaConnection } from "@/lib/meta-wa/client";
+import { newCredentials } from "@/lib/public-api/auth";
+import { sendTestEvent } from "@/lib/public-api/events";
+import { saveWebhookConfig } from "@/lib/public-api/webhook-config";
 import { testWhatsappConnection } from "@/lib/whatsapp/client";
 import {
   discoverVturbPlayers,
@@ -933,4 +936,72 @@ export async function saveMetaWaIntegration(
   revalidatePath("/integracoes");
   revalidatePath("/disparos");
   return { ok: `API oficial conectada${test.displayPhone ? ` · ${test.displayPhone}` : ""}.` };
+}
+
+/* ------------------------------------------ API pública (disparo oficial) */
+
+export type ApiCredentialsState = FormState & { apiKey?: string; apiSecret?: string };
+
+/**
+ * Gera (ou troca) o par x-api-key / x-api-secret da área. O segredo em claro
+ * só existe nesta resposta: no banco fica o sha256. Trocar invalida o par
+ * anterior na hora; a configuração do webhook é mantida.
+ */
+export async function generateApiCredentials(_prev: ApiCredentialsState): Promise<ApiCredentialsState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const { apiKey, apiSecret, secretHash } = newCredentials();
+  const { error } = await createAdminClient()
+    .from("api_credentials")
+    .upsert({ area_id: ctx.area.id, api_key: apiKey, secret_hash: secretHash }, { onConflict: "area_id" });
+  if (error) return { error: `Falha ao gerar: ${error.message}` };
+
+  await audit(ctx.area.id, ctx.user.email, "config.api_credentials_generate", { api_key: apiKey });
+  revalidatePath("/integracoes");
+  return { ok: "Credenciais geradas. Copie o segredo agora — ele não aparece de novo.", apiKey, apiSecret };
+}
+
+/** Apaga as credenciais (e o webhook) da área: a API para de aceitar o par na hora. */
+export async function revokeApiCredentials(_prev: FormState): Promise<FormState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const { error } = await createAdminClient().from("api_credentials").delete().eq("area_id", ctx.area.id);
+  if (error) return { error: `Falha ao revogar: ${error.message}` };
+
+  await audit(ctx.area.id, ctx.user.email, "config.api_credentials_revoke", {});
+  revalidatePath("/integracoes");
+  return { ok: "Credenciais revogadas." };
+}
+
+/** Salva URL e eventos do webhook da API pública. */
+export async function saveApiWebhook(_prev: FormState, formData: FormData): Promise<FormState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const url = String(formData.get("webhook_url") ?? "").trim();
+  const events = formData.getAll("event").map(String);
+  if (url && events.length === 0) return { error: "Marque pelo menos um evento." };
+
+  const result = await saveWebhookConfig(ctx.area.id, {
+    url: url || null,
+    events: events.length > 0 ? events : undefined,
+    rotateSecret: formData.get("rotate_secret") === "on",
+  });
+  if (!result.ok) return { error: result.error };
+
+  await audit(ctx.area.id, ctx.user.email, "config.api_webhook", { url: url || null, events });
+  revalidatePath("/integracoes");
+  return { ok: url ? "Webhook salvo e ligado." : "Webhook removido." };
+}
+
+/** Entrega um evento webhook.test agora. */
+export async function testApiWebhook(_prev: FormState): Promise<FormState> {
+  const ctx = await requireArea();
+  if ("error" in ctx) return { error: ctx.error };
+
+  const result = await sendTestEvent(ctx.area.id);
+  if (result.ok) return { ok: `Entregue · HTTP ${result.status}.` };
+  return { error: `Não entregou: ${result.error ?? "sem resposta"}.` };
 }

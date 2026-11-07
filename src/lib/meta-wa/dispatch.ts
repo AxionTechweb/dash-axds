@@ -1,6 +1,8 @@
 import "server-only";
 
 import { formatCurrency } from "@/lib/format";
+import { finishCampaigns } from "@/lib/public-api/campaigns";
+import { createEmitter, messagePayload } from "@/lib/public-api/events";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { getMetaWaIntegration, normalizePhone, sendMetaTemplate, type MetaWaIntegration } from "./client";
@@ -249,7 +251,7 @@ export async function processDispatchQueue(options: {
 
     let query = admin
       .from("wa_dispatch_log")
-      .select("id, area_id, trigger, source_ref, telefone, template_name, template_language, params, created_at")
+      .select("id, area_id, trigger, source_ref, campaign_id, telefone, template_name, template_language, params, scheduled_at, created_at")
       .eq("status", "queued")
       .lte("scheduled_at", new Date().toISOString())
       .order("scheduled_at", { ascending: true })
@@ -258,6 +260,9 @@ export async function processDispatchQueue(options: {
 
     const { data: rows } = await query;
     const integrations = new Map<string, MetaWaIntegration | null>();
+    // Webhook da API pública: cada resultado vira evento para o sistema do cliente.
+    const emit = createEmitter();
+    const campaigns = new Set<string>();
 
     for (const row of rows ?? []) {
       if (Date.now() > deadline) break;
@@ -275,16 +280,23 @@ export async function processDispatchQueue(options: {
         status: "sent" | "failed" | "skipped",
         extra: { error?: string; wamid?: string | null },
       ) => {
+        const sentAt = status === "sent" ? new Date().toISOString() : null;
         await admin
           .from("wa_dispatch_log")
           .update({
             status,
             error: extra.error ?? null,
             wamid: extra.wamid ?? null,
-            sent_at: status === "sent" ? new Date().toISOString() : null,
+            sent_at: sentAt,
           })
           .eq("id", row.id);
         summary[status] += 1;
+        await emit(
+          row.area_id,
+          `message.${status}`,
+          messagePayload({ ...row, status, error: extra.error, wamid: extra.wamid, sent_at: sentAt }),
+        );
+        if (row.campaign_id) campaigns.add(row.campaign_id as string);
       };
 
       const reason = await skipReason(row);
@@ -312,6 +324,8 @@ export async function processDispatchQueue(options: {
       if (result.ok) await finish("sent", { wamid: result.wamid });
       else await finish("failed", { error: result.error });
     }
+
+    await finishCampaigns(campaigns, emit);
   } catch (err) {
     console.error("[meta-wa] processDispatchQueue:", err);
   }
