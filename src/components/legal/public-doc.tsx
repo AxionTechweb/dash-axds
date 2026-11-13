@@ -137,7 +137,7 @@ export function Strong({ children }: { children: ReactNode }) {
 
 export function Code({ children }: { children: ReactNode }) {
   return (
-    <code className="rounded bg-[hsl(var(--foreground)/0.06)] px-1.5 py-0.5 font-mono text-[13px] text-foreground">
+    <code className="rounded bg-[hsl(var(--foreground)/0.06)] px-1.5 py-0.5 font-code text-[13px] text-foreground">
       {children}
     </code>
   );
@@ -145,7 +145,7 @@ export function Code({ children }: { children: ReactNode }) {
 
 export function Pre({ children }: { children: string }) {
   return (
-    <pre className="overflow-x-auto rounded-lg border border-border bg-[hsl(var(--foreground)/0.03)] p-4 font-mono text-[13px] leading-relaxed text-foreground">
+    <pre className="overflow-x-auto rounded-lg border border-border bg-[hsl(var(--foreground)/0.03)] p-4 font-code text-[13px] leading-relaxed text-foreground">
       {children}
     </pre>
   );

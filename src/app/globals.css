@@ -4,7 +4,7 @@
    Design system — Identidade Visual Axion (referência axion-quiz).
    Preto absoluto (#000000), superfícies navy quente (#0A0908 / #141210 / #211C15),
    dourado metálico (#D4AF37 / #F5C518), azul de dados/tech (#2F8FD1),
-   pergaminho (#F3F1EC), pedra suave (#948C7A) e tipografia Anton + Inter + Cinzel.
+   pergaminho (#F3F1EC), pedra suave (#948C7A) e tipografia Manrope.
 
    Cores em HSL via variáveis CSS (formato "H S% L%", sem a função hsl()).
    A troca de tema é feita pelo atributo data-theme no <html>.
@@ -123,10 +123,13 @@
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
 
-  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-display), ui-sans-serif, sans-serif;
-  --font-myth: var(--font-myth), serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  /* Manrope em tudo; font-mono/display/myth continuam existindo como nomes,
+     mas apontam para a mesma família. Só blocos de código usam --font-code. */
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-manrope), ui-sans-serif, sans-serif;
+  --font-myth: var(--font-manrope), ui-sans-serif, sans-serif;
+  --font-mono: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-code: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @layer base {
@@ -299,7 +302,7 @@
     border-radius: 0;
   }
 
-  /* Rótulo micro em mono caixa-alta */
+  /* Rótulo micro em caixa-alta */
   .micro-label {
     font-family: var(--font-mono);
     font-size: 10px;
@@ -317,9 +320,10 @@
     font-feature-settings: "tnum";
   }
 
-  /* Título display de impacto (Anton), caixa-alta */
+  /* Título display de impacto, caixa-alta */
   .display-title {
     font-family: var(--font-display);
+    font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.03em;
     line-height: 0.95;

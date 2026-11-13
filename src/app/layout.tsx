@@ -1,36 +1,16 @@
 import type { Metadata, Viewport } from "next";
-import { Anton, Cinzel, Inter, JetBrains_Mono } from "next/font/google";
+import { Manrope } from "next/font/google";
 
 import { getBranding } from "@/lib/branding";
 
 import "./globals.css";
 
-/** Tipografia sans moderna e ultra legível — Inter (Axion). */
-const inter = Inter({
-  variable: "--font-sans",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-/** Títulos display bold e condensados de impacto — Anton (identidade visual dos anúncios Axion). */
-const display = Anton({
-  variable: "--font-display",
-  weight: "400",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-/** Serifa premium de inspiração clássica — Cinzel (Axion). */
-const myth = Cinzel({
-  variable: "--font-myth",
-  weight: ["500", "600", "700"],
-  subsets: ["latin"],
-  display: "swap",
-});
-
-/** Rótulos micro, KPIs e tabelas (numerais tabulares). */
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
+/**
+ * Fonte única do painel — Manrope (texto, títulos, rótulos, tabelas e números).
+ * Variável: todos os pesos de 200 a 800 num arquivo só.
+ */
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
   display: "swap",
 });
@@ -86,7 +66,7 @@ export default async function RootLayout({
       lang="pt-BR"
       data-theme="dark"
       style={primaryOverride}
-      className={`${inter.variable} ${display.variable} ${myth.variable} ${jetbrainsMono.variable} h-full`}
+      className={`${manrope.variable} h-full`}
       suppressHydrationWarning
     >
       <head>
