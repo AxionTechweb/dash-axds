@@ -1,18 +1,5 @@
 import {
-  Activity,
-  BadgeDollarSign,
-  Clock,
-  Eye,
-  ListChecks,
-  MousePointerClick,
-  Percent,
-  Play,
-  Radio,
-  Target,
-  TrendingUp,
   TriangleAlert,
-  Users,
-  Zap,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -214,31 +201,27 @@ export default async function VturbPage({
         </Card>
       ) : stats ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          <KpiCard label="Views" value={formatNumber(stats.views)} icon={Eye} sensitive={false} />
+          <KpiCard label="Views" value={formatNumber(stats.views)} sensitive={false} />
           <KpiCard
             label="Unique Views"
             value={formatNumber(stats.uniqueViews)}
-            icon={Users}
             sensitive={false}
           />
           <KpiCard
             label="Plays"
             value={formatNumber(stats.plays)}
-            icon={Play}
             accent="primary"
             sensitive={false}
           />
           <KpiCard
             label="Unique Plays"
             value={formatNumber(stats.uniquePlays)}
-            icon={ListChecks}
             accent="primary"
             sensitive={false}
           />
           <KpiCard
             label="Hook Rate"
             value={hookRate !== null ? formatPercent(hookRate, 2) : "—"}
-            icon={Zap}
             accent="purple"
             sensitive={false}
             sub="Reprodução 3s / Views"
@@ -246,7 +229,6 @@ export default async function VturbPage({
           <KpiCard
             label="Retenção 25%"
             value={retention25 !== null ? formatPercent(retention25, 2) : "—"}
-            icon={Percent}
             accent="purple"
             sensitive={false}
             sub="Reprodução 25% / Reprodução 3s"
@@ -254,7 +236,6 @@ export default async function VturbPage({
           <KpiCard
             label="Retenção 50%"
             value={retention50 !== null ? formatPercent(retention50, 2) : "—"}
-            icon={Percent}
             accent="purple"
             sensitive={false}
             sub="Reprodução 50% / Reprodução 3s"
@@ -262,7 +243,6 @@ export default async function VturbPage({
           <KpiCard
             label="Retenção 75%"
             value={retention75 !== null ? formatPercent(retention75, 2) : "—"}
-            icon={Percent}
             accent="purple"
             sensitive={false}
             sub="Reprodução 75% / Reprodução 3s"
@@ -270,55 +250,47 @@ export default async function VturbPage({
           <KpiCard
             label="Tempo médio de visualização"
             value={formatDuration(funnel?.avgWatchSeconds ?? null)}
-            icon={Clock}
             sensitive={false}
           />
           <KpiCard
             label="Play Rate"
             value={stats.playRate !== null ? formatPercent(stats.playRate, 2) : "—"}
-            icon={Percent}
             accent="purple"
             sensitive={false}
           />
           <KpiCard
             label="Pitch Retention"
             value={stats.pitchRetention !== null ? formatPercent(stats.pitchRetention, 2) : "—"}
-            icon={Activity}
             accent="emerald"
             sensitive={false}
           />
           <KpiCard
             label="Pitch Audience"
             value={formatNumber(stats.pitchAudience)}
-            icon={Users}
             accent="purple"
             sensitive={false}
           />
           <KpiCard
             label="Engagement"
             value={stats.engagementRate !== null ? formatPercent(stats.engagementRate, 2) : "—"}
-            icon={Radio}
             accent="emerald"
             sensitive={false}
           />
           <KpiCard
             label="Button Clicks"
             value={formatNumber(stats.buttonClicks)}
-            icon={MousePointerClick}
             accent="primary"
             sensitive={false}
           />
           <KpiCard
             label="Conversions"
             value={formatNumber(stats.conversions)}
-            icon={Target}
             accent="emerald"
             sensitive={false}
           />
           <KpiCard
             label="Conversion Rate"
             value={stats.conversionRate !== null ? formatPercent(stats.conversionRate, 2) : "—"}
-            icon={TrendingUp}
             accent="emerald"
             sensitive={false}
           />
@@ -328,7 +300,6 @@ export default async function VturbPage({
               style: "currency",
               currency: "BRL",
             }).format(stats.revenue)}
-            icon={BadgeDollarSign}
             accent="emerald"
           />
         </div>

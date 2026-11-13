@@ -1,33 +1,14 @@
 import {
   Activity,
-  ArrowDownRight,
-  ArrowUpRight,
-  BadgeCheck,
-  BadgeDollarSign,
-  Banknote,
   CalendarDays,
   Clock,
   CreditCard,
-  Eye,
   Filter,
   Globe2,
-  ListChecks,
-  LogOut,
-  Megaphone,
-  MousePointer2,
-  MousePointerClick,
   Package,
   Radio,
-  Receipt,
-  RotateCcw,
   Share2,
-  ShoppingBag,
-  ShoppingCart,
-  Target,
-  TrendingUp,
   TriangleAlert,
-  Undo2,
-  Users,
 } from "lucide-react";
 import type { Metadata } from "next";
 
@@ -198,12 +179,10 @@ export default async function DashboardPage({
         <KpiCard
           label="Faturamento Bruto"
           value={formatCurrency(revenue, currency)}
-          icon={Banknote}
         />
         <KpiCard
           label="Gasto com Ads"
           value={formatCurrency(adSpend, currency)}
-          icon={Megaphone}
           sub={
             meta.fx
               ? `US$ ${meta.fx.usdSpend.toFixed(2)} · câmbio R$ ${meta.fx.rate.toFixed(4)}`
@@ -213,14 +192,12 @@ export default async function DashboardPage({
         <KpiCard
           label="Lucro"
           value={formatCurrency(profit, currency)}
-          icon={TrendingUp}
           accent={profit < 0 ? "destructive" : "primary"}
           sub={`Ads ${formatCurrency(adSpend, currency)} · Imposto ${formatNumber(Number(taxRate))}% (${formatCurrency(tax, currency)}) · Gateway ${formatCurrency(gatewayFees, currency)}`}
         />
         <KpiCard
           label="Margem de Lucro"
           value={revenue > 0 ? formatPercent((profit / revenue) * 100, 1) : "—"}
-          icon={TrendingUp}
           accent={profit < 0 ? "destructive" : "primary"}
           sensitive={false}
           sub="Lucro / Faturamento Bruto"
@@ -228,21 +205,18 @@ export default async function DashboardPage({
         <KpiCard
           label="Vendas Aprovadas"
           value={formatNumber(sales)}
-          icon={ShoppingBag}
           sensitive={false}
           series={salesSeries}
         />
         <KpiCard
           label="ROAS"
           value={formatRoas(roas)}
-          icon={Target}
           accent={roas > 0 && roas < 1 ? "destructive" : "primary"}
           series={roasSeries}
         />
         <KpiCard
           label="ROAS Front"
           value={formatRoas(roasFront)}
-          icon={Target}
           accent={roasFront > 0 && roasFront < 1 ? "destructive" : "primary"}
           sensitive={false}
           sub={`${formatCurrency(roasSegments.frontRevenue, currency)} (${formatNumber(roasSegments.frontCount)})`}
@@ -250,7 +224,6 @@ export default async function DashboardPage({
         <KpiCard
           label="ROAS Backend"
           value={formatRoas(roasBackend)}
-          icon={Target}
           accent={
             roasBackend > 0 && roasBackend < 1 ? "destructive" : "primary"
           }
@@ -260,7 +233,6 @@ export default async function DashboardPage({
         <KpiCard
           label="CPA"
           value={formatCurrency(cpa, currency)}
-          icon={BadgeDollarSign}
           series={cpaSeries}
         />
       </div>
@@ -286,18 +258,15 @@ export default async function DashboardPage({
           <KpiCard
             label="Ticket Médio"
             value={formatCurrency(ticketMedio, currency)}
-            icon={Receipt}
           />
           <KpiCard
             label="Vendas Totais"
             value={formatNumber(sales)}
-            icon={ShoppingCart}
             sensitive={false}
           />
           <KpiCard
             label="Vendas Únicas"
             value={formatNumber(safeMetrics.uniqueSales)}
-            icon={Users}
             sensitive={false}
             sub="Clientes distintos, por e-mail"
           />
@@ -312,7 +281,6 @@ export default async function DashboardPage({
                   )
                 : "—"
             }
-            icon={Target}
             accent="emerald"
             sensitive={false}
             sub="Vendas únicas / Page View"
@@ -320,14 +288,12 @@ export default async function DashboardPage({
           <KpiCard
             label="Reembolsos"
             value={formatCurrency(safeMetrics.refundedValue, currency)}
-            icon={Undo2}
             accent="destructive"
             sub={`${formatNumber(safeMetrics.refundedCount)} reembolso${safeMetrics.refundedCount === 1 ? "" : "s"}`}
           />
           <KpiCard
             label="Vendas Upsell"
             value={formatCurrency(safeMetrics.upsellRevenue, currency)}
-            icon={ArrowUpRight}
             accent="emerald"
             sensitive={false}
             sub={`${formatNumber(safeMetrics.upsellCount)} venda${safeMetrics.upsellCount === 1 ? "" : "s"} (R$297)`}
@@ -335,7 +301,6 @@ export default async function DashboardPage({
           <KpiCard
             label="Vendas Downsell"
             value={formatCurrency(safeMetrics.downsellRevenue, currency)}
-            icon={ArrowDownRight}
             accent="purple"
             sensitive={false}
             sub={`${formatNumber(safeMetrics.downsellCount)} venda${safeMetrics.downsellCount === 1 ? "" : "s"} (R$97)`}
@@ -343,7 +308,6 @@ export default async function DashboardPage({
           <KpiCard
             label="Aguardando Pagamento"
             value={formatCurrency(safeMetrics.waitingPaymentValue, currency)}
-            icon={Clock}
             accent="purple"
             sensitive={false}
             sub={`${formatNumber(safeMetrics.waitingPaymentCount)} venda${safeMetrics.waitingPaymentCount === 1 ? "" : "s"}`}
@@ -351,7 +315,6 @@ export default async function DashboardPage({
           <KpiCard
             label="Abandono de Checkout"
             value={formatCurrency(safeMetrics.abandonedValue, currency)}
-            icon={LogOut}
             accent="destructive"
             sensitive={false}
             sub={`${formatNumber(safeMetrics.abandonedCount)} carrinho${safeMetrics.abandonedCount === 1 ? "" : "s"}`}
@@ -359,7 +322,6 @@ export default async function DashboardPage({
           <KpiCard
             label="Recuperação de Carrinho"
             value={formatCurrency(cartRecovery.revenue, currency)}
-            icon={RotateCcw}
             accent="emerald"
             sensitive={false}
             sub={`${formatNumber(cartRecovery.count)} venda${cartRecovery.count === 1 ? "" : "s"} recuperada${cartRecovery.count === 1 ? "" : "s"}`}
@@ -374,24 +336,20 @@ export default async function DashboardPage({
           <KpiCard
             label="CPM"
             value={formatCurrency(cpm, currency)}
-            icon={Eye}
             sub="Custo por mil impressões"
           />
           <KpiCard
             label="CTR"
             value={formatPercent(ctr)}
-            icon={MousePointerClick}
             sensitive={false}
           />
           <KpiCard
             label="CPC"
             value={formatCurrency(cpc, currency)}
-            icon={MousePointer2}
           />
           <KpiCard
             label="CPV"
             value={formatCurrency(cpv, currency)}
-            icon={Globe2}
             sub={
               meta.insights.landingPageView > 0
                 ? "Custo por visita à landing page (pixel Meta)"
@@ -401,7 +359,6 @@ export default async function DashboardPage({
           <KpiCard
             label="CPI"
             value={formatCurrency(cpi, currency)}
-            icon={ListChecks}
             sub={
               meta.insights.initiateCheckout > 0
                 ? "Custo por checkout iniciado (pixel Meta)"
@@ -411,7 +368,6 @@ export default async function DashboardPage({
           <KpiCard
             label="Compras FB"
             value={formatNumber(meta.insights.metaPurchases)}
-            icon={BadgeCheck}
             sensitive={false}
             sub="Conversões reportadas pela própria Meta"
           />

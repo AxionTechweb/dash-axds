@@ -97,7 +97,8 @@ export function KpiCard({
 }: {
   label: string;
   value: string;
-  icon: LucideIcon;
+  /** Sem ícone, o rótulo fica sozinho no topo, alinhado à esquerda. */
+  icon?: LucideIcon;
   sub?: string;
   /** Sufixo discreto ao lado do valor (ex.: "BRL", "%"). */
   unit?: string;
@@ -116,12 +117,16 @@ export function KpiCard({
         tone.border,
       )}
     >
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <span className={cn("icon-tile", tone.tile)}>
-          <Icon className="size-4" />
-        </span>
-        <span className="micro-label pt-1 text-right">{label}</span>
-      </div>
+      {Icon ? (
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <span className={cn("icon-tile", tone.tile)}>
+            <Icon className="size-4" />
+          </span>
+          <span className="micro-label pt-1 text-right">{label}</span>
+        </div>
+      ) : (
+        <p className="micro-label mb-3">{label}</p>
+      )}
 
       <div className="flex items-baseline gap-1.5">
         <span

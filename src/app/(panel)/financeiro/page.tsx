@@ -1,4 +1,3 @@
-import { Banknote, Percent, RotateCcw, ShieldAlert, Ticket } from "lucide-react";
 import type { Metadata } from "next";
 
 import { KpiCard } from "@/components/panel/kpi-card";
@@ -103,37 +102,31 @@ export default async function FinanceiroPage({
         <KpiCard
           label="Receita Bruta"
           value={formatCurrency(gross, currency)}
-          icon={Banknote}
         />
         <KpiCard
           label="Receita Líquida"
           value={formatCurrency(net, currency)}
-          icon={Percent}
           accent="primary"
           sub={`Descontado imposto de ${formatNumber(taxRate)}% (${formatCurrency(tax, currency)})`}
         />
         <KpiCard
           label="Ticket Médio"
           value={formatCurrency(ticket, currency)}
-          icon={Ticket}
         />
         <KpiCard
           label="Reembolsos"
           value={formatCurrency(metrics.refundedValue, currency)}
-          icon={RotateCcw}
           sub={`${formatNumber(metrics.refundedCount)} transações · ${formatPercent(refundRate)}`}
         />
         <KpiCard
           label="Chargebacks"
           value={formatCurrency(metrics.chargebackValue, currency)}
-          icon={ShieldAlert}
           accent={metrics.chargebackCount > 0 ? "destructive" : "default"}
           sub={`${formatNumber(metrics.chargebackCount)} transações · ${formatPercent(chargebackRate)}`}
         />
         <KpiCard
           label="Pendentes"
           value={formatNumber(metrics.pendingCount)}
-          icon={Ticket}
           sensitive={false}
         />
       </div>
