@@ -35,7 +35,7 @@ export type AuthUser = {
 
 type AuthError = { message: string; status?: number };
 const err = (message: string, status = 400): AuthError => ({ message, status });
-const ok = null as AuthError | null;
+const NO_ERROR = null as AuthError | null;
 
 function randomToken(): string {
   const b = crypto.getRandomValues(new Uint8Array(32));
@@ -157,7 +157,7 @@ export function createAuth(cookies: CookieAccess, inviteRedirect: () => string) 
 
     async getSession() {
       const user = await userBySessionToken(currentToken()).catch(() => null);
-      return { data: { session: user ? { access_token: "", user } : null }, error: ok };
+      return { data: { session: user ? { access_token: "", user } : null }, error: NO_ERROR };
     },
 
     async signInWithPassword({ email, password }: { email: string; password: string }) {
@@ -171,7 +171,7 @@ export function createAuth(cookies: CookieAccess, inviteRedirect: () => string) 
       if (!row || !ok) return { data: { user: null, session: null }, error: err("Invalid login credentials") };
       await startSession(cookies, String(row.id), "session");
       await db.prepare("UPDATE auth_users SET last_sign_in_at = ? WHERE id = ?").bind(nowIso(), row.id).run();
-      return { data: { user: toUser(row), session: {} }, error: ok };
+      return { data: { user: toUser(row), session: {} }, error: NO_ERROR };
     },
 
     async signOut() {
@@ -185,7 +185,7 @@ export function createAuth(cookies: CookieAccess, inviteRedirect: () => string) 
       } catch {
         /* Server Component */
       }
-      return { error: ok };
+      return { error: NO_ERROR };
     },
 
     async resetPasswordForEmail(email: string, opts?: { redirectTo?: string }) {
@@ -196,7 +196,7 @@ export function createAuth(cookies: CookieAccess, inviteRedirect: () => string) 
           .bind(email.trim())
           .first()) as { id: string; email: string } | null;
         if (row) await issueLink(row.id, row.email, "recovery", opts?.redirectTo ?? inviteRedirect());
-        return { data: {}, error: ok };
+        return { data: {}, error: NO_ERROR };
       } catch (e) {
         console.error("[auth] reset:", e instanceof Error ? e.message : e);
         return { data: {}, error: err("Falha ao enviar o e-mail.") };
@@ -220,7 +220,7 @@ export function createAuth(cookies: CookieAccess, inviteRedirect: () => string) 
         .bind(nowIso(), row.user_id)
         .run();
       await startSession(cookies, row.user_id, "recovery");
-      return { data: { user: null, session: {} }, error: ok };
+      return { data: { user: null, session: {} }, error: NO_ERROR };
     },
 
     async exchangeCodeForSession(code: string) {
@@ -242,7 +242,7 @@ export function createAuth(cookies: CookieAccess, inviteRedirect: () => string) 
           .bind(JSON.stringify({ ...user.user_metadata, ...attrs.data }), user.id)
           .run();
       }
-      return { data: { user }, error: ok };
+      return { data: { user }, error: NO_ERROR };
     },
 
     onAuthStateChange() {
@@ -259,7 +259,7 @@ export function createAuth(cookies: CookieAccess, inviteRedirect: () => string) 
           .bind(per, (page - 1) * per)
           .all();
         const users = ((r.results ?? []) as Record<string, unknown>[]).map(toUser);
-        return { data: { users }, error: ok };
+        return { data: { users }, error: NO_ERROR };
       },
 
       async createUser(input: { email: string; password?: string; email_confirm?: boolean; user_metadata?: Record<string, unknown> }) {
@@ -277,7 +277,7 @@ export function createAuth(cookies: CookieAccess, inviteRedirect: () => string) 
               input.email_confirm ? nowIso() : null,
             )
             .first()) as Record<string, unknown>;
-          return { data: { user: toUser(row) }, error: ok };
+          return { data: { user: toUser(row) }, error: NO_ERROR };
         } catch (e) {
           const m = e instanceof Error ? e.message : String(e);
           return { data: { user: null }, error: err(/UNIQUE/.test(m) ? "A user with this email address has already been registered" : m) };
@@ -287,7 +287,7 @@ export function createAuth(cookies: CookieAccess, inviteRedirect: () => string) 
       async deleteUser(id: string) {
         const db = await getDb();
         await db.prepare("DELETE FROM auth_users WHERE id = ?").bind(id).run();
-        return { data: {}, error: ok };
+        return { data: {}, error: NO_ERROR };
       },
 
       async inviteUserByEmail(email: string, opts?: { redirectTo?: string }) {
@@ -304,7 +304,7 @@ export function createAuth(cookies: CookieAccess, inviteRedirect: () => string) 
               .first()) as { id: string; email: string };
           }
           await issueLink(row.id, row.email, "invite", opts?.redirectTo ?? inviteRedirect());
-          return { data: { user: row }, error: ok };
+          return { data: { user: row }, error: NO_ERROR };
         } catch (e) {
           return { data: { user: null }, error: err(e instanceof Error ? e.message : String(e)) };
         }
