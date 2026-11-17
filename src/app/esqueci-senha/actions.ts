@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 
+import { authAttemptAllowed, logAuthEvent } from "@/lib/auth-guard";
 import { createClient } from "@/lib/supabase/server";
 
 export type ForgotPasswordState = { error?: string; ok?: string };
@@ -47,12 +48,16 @@ export async function requestPasswordReset(
     return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
 
-  const baseUrl = await getBaseUrl();
-  const supabase = await createClient();
+  // Passou do limite: responde igual (não revela nada) e simplesmente não envia.
+  if (await authAttemptAllowed("reset", parsed.data.email)) {
+    const baseUrl = await getBaseUrl();
+    const supabase = await createClient();
 
-  await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: `${baseUrl}/auth/confirm?next=/redefinir-senha`,
-  });
+    await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+      redirectTo: `${baseUrl}/auth/confirm?next=/redefinir-senha`,
+    });
+    await logAuthEvent("auth.reset_requested", parsed.data.email);
+  }
 
   return {
     ok: "Se esse e-mail tiver uma conta, enviamos um link para redefinir a senha.",

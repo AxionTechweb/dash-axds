@@ -71,3 +71,17 @@ que já está no D1. `.migration/` (dump com PII) fica fora do git.
 5. Volta, se precisar: reverter o commit do passo 2 e religar o pg_cron
    (`supabase/migrations/20261017120200_schedule_crons_pg_cron.sql`). O Supabase
    fica intacto por 30 dias.
+
+## Plano de recuperação (incidentes)
+
+| Aconteceu | O que fazer |
+|---|---|
+| Deploy novo quebrou o painel | `npx wrangler deployments list` → `npx wrangler rollback <version-id>` (volta o código; o banco não muda). |
+| Dado apagado/corrompido no D1 | Time Travel (30 dias): `npx wrangler d1 time-travel info dash-axds --timestamp=<ISO antes do erro>` e depois `... time-travel restore dash-axds --bookmark=<bookmark>`. Restaurar volta o banco inteiro: exporte antes o que entrou depois (`wrangler d1 export dash-axds --remote --output=backup.sql`). |
+| Token da Cloudflare vazou | Painel Cloudflare → My Profile → API Tokens → **Roll** (ou Delete e criar outro) e atualizar o cofre local. |
+| `CRON_SECRET` / `SETUP_TOKEN` vazou | Gerar outro (`openssl rand -hex 32`) e `npx wrangler secret put CRON_SECRET`. O Worker usa o novo na hora; nada mais a trocar. |
+| `ENCRYPTION_KEY` vazou | Os segredos de integração (tokens da Meta/WhatsApp, chaves de checkout) cifrados com ela devem ser considerados expostos **se o banco também vazou**: trocar a chave (`wrangler secret put ENCRYPTION_KEY`) e recadastrar as integrações no painel (o que foi cifrado com a antiga deixa de abrir). |
+| Senha de usuário vazou | Usuário troca em "Esqueci a senha" (derruba as outras sessões). Para derrubar todas na hora: `npx wrangler d1 execute dash-axds --remote --command "DELETE FROM auth_sessions WHERE user_id = '<id>'"`. |
+| Ataque de força bruta | Login, reset e setup já limitam por IP e por e-mail. Ver `audit_log` (`auth.login_failed` / `auth.login_blocked`). |
+
+Rotina: uma vez por mês, `npm audit --omit=dev` e `npm outdated`; atualizar e subir pelo branch.

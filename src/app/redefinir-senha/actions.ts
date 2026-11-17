@@ -39,7 +39,7 @@ export async function updatePassword(
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await supabase.auth.getUser({ allowRecovery: true });
   if (!user) {
     return {
       error: "Link expirado ou inválido. Peça um novo link em \"Esqueceu a senha?\".",

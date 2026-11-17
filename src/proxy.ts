@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { getUserFromSessionToken, SESSION_COOKIE } from "@/lib/db/auth";
+import { getSessionFromToken, SESSION_COOKIE } from "@/lib/db/auth";
 
 /**
  * Next.js 16: `middleware` foi renomeado para `proxy` (runtime nodejs, sem edge).
@@ -40,7 +40,16 @@ export async function proxy(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (!token && isPublic(pathname)) return NextResponse.next({ request });
 
-  const user = token ? await getUserFromSessionToken(token) : null;
+  const session = token ? await getSessionFromToken(token) : null;
+  // Sessão aberta pelo link do e-mail só vale pra definir a senha.
+  const user = session?.kind === "session" ? session.user : null;
+
+  if (session?.kind === "recovery" && !isPublic(pathname)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/redefinir-senha";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
 
   if (!user && !isPublic(pathname)) {
     const url = request.nextUrl.clone();
@@ -58,7 +67,7 @@ export async function proxy(request: NextRequest) {
 
   const res = NextResponse.next({ request });
   // Cookie de sessão inválido/expirado: limpa pra não consultar o banco à toa.
-  if (token && !user) res.cookies.delete(SESSION_COOKIE);
+  if (token && !session) res.cookies.delete(SESSION_COOKIE);
   return res;
 }
 

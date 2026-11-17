@@ -5,6 +5,7 @@ import { timingSafeEqual } from "node:crypto";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { authAttemptAllowed } from "@/lib/auth-guard";
 import { getSetupToken } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -56,6 +57,10 @@ export async function runSetup(
   }
 
   const { token, email, password, areaName } = parsed.data;
+
+  if (!(await authAttemptAllowed("setup"))) {
+    return { error: "Muitas tentativas. Aguarde 15 minutos." };
+  }
 
   let expectedToken: string;
   try {

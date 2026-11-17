@@ -16,6 +16,8 @@ import { sendEmail } from "@/lib/email/send";
 export const SESSION_COOKIE = "axds_session";
 const SESSION_DAYS = 30;
 const RECOVERY_HOURS = 1;
+/** Sessão aberta pelo link do e-mail (reset/convite): só serve pra definir a senha. */
+const RECOVERY_SESSION_MINUTES = 15;
 const INVITE_DAYS = 7;
 
 export type CookieAccess = {
@@ -81,37 +83,51 @@ export async function verifyPassword(hash: string | null | undefined, p: string)
   }
 }
 
-async function userBySessionToken(token: string | undefined): Promise<AuthUser | null> {
+export type SessionKind = "session" | "recovery";
+
+async function sessionByToken(
+  token: string | undefined,
+): Promise<{ user: AuthUser; kind: SessionKind } | null> {
   if (!token) return null;
   const db = await getDb();
   const row = (await db
     .prepare(
-      `SELECT u.* FROM auth_sessions s JOIN auth_users u ON u.id = s.user_id
+      `SELECT u.*, s.kind AS session_kind FROM auth_sessions s JOIN auth_users u ON u.id = s.user_id
        WHERE s.id = ? AND s.expires_at > ?`,
     )
     .bind(await sha256Hex(token), nowIso())
     .first()) as Record<string, unknown> | null;
-  return row ? toUser(row) : null;
+  if (!row) return null;
+  return { user: toUser(row), kind: row.session_kind === "recovery" ? "recovery" : "session" };
+}
+
+/** Só sessão de login normal. A de recuperação NÃO dá acesso ao painel. */
+async function userBySessionToken(token: string | undefined): Promise<AuthUser | null> {
+  const s = await sessionByToken(token);
+  return s && s.kind === "session" ? s.user : null;
 }
 
 /** Usado pelo proxy.ts: só confere o cookie, sem mexer em nada. */
-export async function getUserFromSessionToken(token: string | undefined): Promise<AuthUser | null> {
+export async function getSessionFromToken(
+  token: string | undefined,
+): Promise<{ user: AuthUser; kind: SessionKind } | null> {
   try {
-    return await userBySessionToken(token);
+    return await sessionByToken(token);
   } catch (e) {
     console.error("[auth] sessão:", e instanceof Error ? e.message : e);
     return null;
   }
 }
 
-async function startSession(cookies: CookieAccess, userId: string, kind: "session" | "recovery") {
+async function startSession(cookies: CookieAccess, userId: string, kind: SessionKind) {
   const token = randomToken();
   const db = await getDb();
+  const seconds = kind === "recovery" ? RECOVERY_SESSION_MINUTES * 60 : SESSION_DAYS * 86_400;
   await db
     .prepare("INSERT INTO auth_sessions (id, user_id, kind, expires_at) VALUES (?, ?, ?, ?)")
-    .bind(await sha256Hex(token), userId, kind, plus(SESSION_DAYS * 86_400_000))
+    .bind(await sha256Hex(token), userId, kind, plus(seconds * 1000))
     .run();
-  cookies.set(SESSION_COOKIE, token, { maxAge: SESSION_DAYS * 86_400 });
+  cookies.set(SESSION_COOKIE, token, { maxAge: seconds });
 }
 
 async function sendLinkEmail(email: string, link: string, kind: "recovery" | "invite") {
@@ -146,9 +162,11 @@ export function createAuth(cookies: CookieAccess, inviteRedirect: () => string) 
   const currentToken = () => cookies.get(SESSION_COOKIE);
 
   return {
-    async getUser() {
+    /** `allowRecovery`: só a tela /redefinir-senha aceita a sessão do link do e-mail. */
+    async getUser(opts?: { allowRecovery?: boolean }) {
       try {
-        const user = await userBySessionToken(currentToken());
+        const s = await sessionByToken(currentToken());
+        const user = s && (s.kind === "session" || opts?.allowRecovery) ? s.user : null;
         return { data: { user }, error: user ? null : err("Auth session missing!", 401) };
       } catch (e) {
         return { data: { user: null }, error: err(e instanceof Error ? e.message : "erro", 500) };
@@ -228,7 +246,9 @@ export function createAuth(cookies: CookieAccess, inviteRedirect: () => string) 
     },
 
     async updateUser(attrs: { password?: string; data?: Record<string, unknown> }) {
-      const user = await userBySessionToken(currentToken());
+      const s = await sessionByToken(currentToken());
+      // Sessão de recuperação só pode trocar a senha, nada além disso.
+      const user = s && (s.kind === "session" || (attrs.password && !attrs.data)) ? s.user : null;
       if (!user) return { data: { user: null }, error: err("Auth session missing!", 401) };
       const db = await getDb();
       if (attrs.password) {
