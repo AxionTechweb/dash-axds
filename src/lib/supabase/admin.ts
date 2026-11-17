@@ -1,16 +1,21 @@
 import "server-only";
 
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-
-import { getServiceRoleKey, SUPABASE_URL } from "@/lib/env";
+import { createAuth } from "@/lib/db/auth";
+import { createDbClient } from "@/lib/db/client";
+import { siteUrl } from "@/lib/email/send";
 
 /**
- * Cliente Supabase com service_role — SOMENTE no servidor.
- * Faz BYPASS de RLS: use apenas em endpoints públicos (captura/webhooks),
- * Server Actions de escrita e rotinas do servidor. NUNCA exponha ao client.
+ * Cliente "service" do servidor — agora sobre o Cloudflare D1 (o nome do
+ * arquivo ficou por compatibilidade com os imports antigos). Sem RLS: use só
+ * no servidor (webhooks, actions, crons). NUNCA exponha ao client.
  */
 export function createAdminClient() {
-  return createSupabaseClient(SUPABASE_URL, getServiceRoleKey(), {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  const noCookies = {
+    get: () => undefined,
+    set: () => {},
+  };
+  return {
+    ...createDbClient(),
+    auth: createAuth(noCookies, () => `${siteUrl()}/auth/confirm?next=/redefinir-senha`),
+  };
 }

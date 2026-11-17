@@ -1,16 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { formatCurrency } from "@/lib/format";
 import type { RecentSale } from "@/lib/metrics";
-import { createClient } from "@/lib/supabase/client";
 
 /**
- * Feed "Vendas em Tempo Real" — recebe as compras aprovadas via Supabase
- * Realtime assim que o webhook grava. Se o Realtime não conectar, cai num
- * polling leve (router.refresh) como fallback.
+ * Feed "Vendas em Tempo Real" — atualiza as compras aprovadas por
+ * polling a cada 15 s (rota /api/sales/latest).
  */
 export function RealtimeSales({
   areaId,
@@ -22,86 +19,47 @@ export function RealtimeSales({
   initial: RecentSale[];
 }) {
   const [sales, setSales] = useState<RecentSale[]>(initial);
-  const router = useRouter();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Venda mais nova já exibida: o polling só busca o que chegou depois dela.
+  // Sem nenhuma, começa de agora (não puxa vendas fora do período filtrado).
+  const sinceRef = useRef<string>(initial[0]?.created_at ?? new Date().toISOString());
 
   useEffect(() => {
-    const supabase = createClient();
-    let channel: ReturnType<typeof supabase.channel> | null = null;
     let cancelled = false;
 
     /**
-     * O socket do Realtime precisa do JWT do usuário ANTES de assinar.
-     *
-     * `purchases` tem RLS e SELECT só para `authenticated`. Se o canal sobe
-     * antes de a sessão ser carregada, ele se autentica como `anon` e o
-     * servidor entrega ZERO eventos — sem erro, sem status ruim: o canal fica
-     * SUBSCRIBED e silencioso. Por isso pegamos a sessão primeiro.
+     * Polling leve na rota /api/sales/latest (sessão do painel no cookie).
+     * Substitui o Supabase Realtime desde a ida pra Cloudflare (D1 não tem
+     * canal de mudanças).
      */
-    async function connect() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (cancelled) return;
-
-      if (session?.access_token) {
-        await supabase.realtime.setAuth(session.access_token);
+    async function poll() {
+      try {
+        const since = sinceRef.current;
+        const qs = new URLSearchParams({ area: areaId });
+        if (since) qs.set("since", since);
+        const res = await fetch(`/api/sales/latest?${qs}`, { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const body = (await res.json()) as { sales?: RecentSale[] };
+        const fresh = Array.isArray(body.sales) ? body.sales : [];
+        if (cancelled || fresh.length === 0) return;
+        sinceRef.current = fresh[0].created_at;
+        setSales((prev) =>
+          [...fresh, ...prev.filter((s) => !fresh.some((f) => f.id === s.id))].slice(0, 12),
+        );
+      } catch {
+        /* rede instável: tenta no próximo ciclo */
       }
-      if (cancelled) return;
-
-      channel = supabase
-        .channel(`purchases:${areaId}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "purchases",
-            filter: `area_id=eq.${areaId}`,
-          },
-          (payload) => {
-            const row = payload.new as RecentSale & { status?: string };
-            if (row.status !== "approved") return;
-
-            setSales((prev) =>
-              [
-                {
-                  id: row.id,
-                  produto: row.produto,
-                  valor: row.valor,
-                  created_at: row.created_at,
-                },
-                ...prev.filter((s) => s.id !== row.id),
-              ].slice(0, 12),
-            );
-          },
-        )
-        .subscribe((status) => {
-          // Fallback: sem Realtime, atualiza a rota periodicamente.
-          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            pollRef.current ??= setInterval(() => router.refresh(), 60_000);
-          }
-        });
     }
 
-    void connect();
-
-    // O access_token expira; sem renovar no socket o canal emudece depois de
-    // um tempo. Reaplicamos a cada refresh de sessão.
-    const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.access_token) void supabase.realtime.setAuth(session.access_token);
-    });
-
+    pollRef.current = setInterval(() => void poll(), 15_000);
     return () => {
       cancelled = true;
-      authSub.subscription.unsubscribe();
-      if (channel) supabase.removeChannel(channel);
       if (pollRef.current) {
         clearInterval(pollRef.current);
         pollRef.current = null;
       }
     };
-  }, [areaId, router]);
+  }, [areaId]);
 
   if (sales.length === 0) {
     return (

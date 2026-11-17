@@ -2,7 +2,7 @@
 
 import { AlertCircle, LogIn } from "lucide-react";
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -14,6 +14,13 @@ export function LoginForm() {
     signIn,
     {},
   );
+
+  // Login ok → navegação completa (o cookie de sessão acabou de ser gravado).
+  // No Worker (OpenNext) o redirect() de dentro da action quebrava depois de
+  // gravar o cookie; a navegação pelo navegador é o caminho robusto.
+  useEffect(() => {
+    if (state.ok) window.location.assign("/dashboard");
+  }, [state.ok]);
 
   return (
     <form action={formAction} className="space-y-4">
@@ -62,7 +69,7 @@ export function LoginForm() {
       <Button
         type="submit"
         variant="primary"
-        disabled={pending}
+        disabled={pending || !!state.ok}
         className="w-full justify-center"
       >
         <LogIn className="size-4" />

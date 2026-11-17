@@ -1,11 +1,10 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { createClient } from "@/lib/supabase/server";
 
-export type LoginState = { error?: string };
+export type LoginState = { error?: string; ok?: boolean };
 
 const LoginSchema = z.object({
   email: z.email("E-mail inválido."),
@@ -37,5 +36,5 @@ export async function signIn(
     return { error: "E-mail ou senha incorretos." };
   }
 
-  redirect("/dashboard");
+  return { ok: true };
 }

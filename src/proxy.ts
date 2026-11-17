@@ -1,13 +1,12 @@
-import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/env";
+import { getUserFromSessionToken, SESSION_COOKIE } from "@/lib/db/auth";
 
 /**
  * Next.js 16: `middleware` foi renomeado para `proxy` (runtime nodejs, sem edge).
  *
  * Responsabilidades:
- *  1. Renovar a sessão do Supabase a cada request (cookies).
+ *  1. Conferir a sessão do painel (cookie httpOnly → tabela auth_sessions no D1).
  *  2. Proteger as rotas do painel — sem sessão, redireciona para /login.
  *
  * Rotas públicas: /login, /setup, o fluxo de redefinição de senha
@@ -35,37 +34,13 @@ function isPublic(pathname: string): boolean {
 }
 
 export async function proxy(request: NextRequest) {
-  // Primeira execução (env ainda não configurado): não bloqueia nada, deixa a
-  // aplicação renderizar as instruções de setup.
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    return NextResponse.next({ request });
-  }
-
-  let supabaseResponse = NextResponse.next({ request });
-
-  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) =>
-          request.cookies.set(name, value),
-        );
-        supabaseResponse = NextResponse.next({ request });
-        cookiesToSet.forEach(({ name, value, options }) =>
-          supabaseResponse.cookies.set(name, value, options),
-        );
-      },
-    },
-  });
-
-  // IMPORTANTE: getUser() revalida o token no servidor de Auth.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
   const { pathname } = request.nextUrl;
+
+  // Rota pública sem cookie: nem consulta o banco.
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  if (!token && isPublic(pathname)) return NextResponse.next({ request });
+
+  const user = token ? await getUserFromSessionToken(token) : null;
 
   if (!user && !isPublic(pathname)) {
     const url = request.nextUrl.clone();
@@ -81,7 +56,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  return supabaseResponse;
+  const res = NextResponse.next({ request });
+  // Cookie de sessão inválido/expirado: limpa pra não consultar o banco à toa.
+  if (token && !user) res.cookies.delete(SESSION_COOKIE);
+  return res;
 }
 
 export const config = {

@@ -1,20 +1,18 @@
-import type { EmailOtpType } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 
 /**
- * GET /auth/confirm — recebe o link de confirmação/recuperação do e-mail da
- * Supabase e troca por uma sessão de verdade (cookie) antes de mandar pra
- * frente. Esse projeto usa o fluxo PKCE (confirmado num link real: vem
- * `?code=...`, não `token_hash`+`type`) — `exchangeCodeForSession` é o
- * caminho principal; `verifyOtp` fica como fallback pra outros fluxos.
+ * GET /auth/confirm — recebe o link do e-mail (reset de senha ou convite,
+ * enviado pelo Resend) e troca o token de uso único por uma sessão (cookie)
+ * antes de mandar pra frente. Links antigos do Supabase (`?code=`) também caem
+ * aqui e são recusados (token desconhecido).
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
-  const type = searchParams.get("type") as EmailOtpType | null;
+  const type = searchParams.get("type") ;
   // Só caminho interno: "//host" ou "/\host" levariam para outro domínio.
   const rawNext = searchParams.get("next") ?? "/dashboard";
   const next = /^\/(?![/\\])/.test(rawNext) ? rawNext : "/dashboard";

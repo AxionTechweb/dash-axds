@@ -1,8 +1,11 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"main": ".open-next/worker.js",
+	// worker.ts = Next (OpenNext) no fetch + Cron Triggers no scheduled.
+	"main": "worker.ts",
 	"name": "dash-axds",
-	"compatibility_date": "2026-11-01",
+	// Não subir sem testar: com datas de 2026 o `env` deixou de trazer as
+	// vars/secrets (process.env vazio → SETUP_TOKEN/CRON_SECRET somem). Testado 17/11/2026.
+	"compatibility_date": "2025-09-01",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"assets": {
 		"directory": ".open-next/assets",
@@ -15,7 +18,29 @@
 			"service": "dash-axds"
 		}
 	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "dash-axds",
+			// Preenchido depois do `wrangler d1 create dash-axds` (ver docs/cloudflare.md).
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "d1/migrations"
+		}
+	],
+	// Substitui o pg_cron do Supabase e os crons da Vercel. A rota de cada
+	// expressão está em CRON_ROUTES (worker.ts). Horários em UTC.
+	"triggers": {
+		"crons": [
+			"* * * * *",
+			"*/5 * * * *",
+			"*/15 * * * *",
+			"2 * * * *",
+			"7 * * * *",
+			"0 21 * * *",
+			"30 3 * * *",
+			"0 9 * * 1",
+			"0 8 * * *"
+		]
+	},
 	"observability": { "enabled": true }
-	// Task 1 (spike): ainda lê o Supabase pelas vars/secrets.
-	// D1 (binding "DB") entra na Task 2; crons na Task 8.
 }

@@ -1,32 +1,38 @@
-import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/env";
+import { createAuth, SESSION_COOKIE } from "@/lib/db/auth";
+import { createDbClient } from "@/lib/db/client";
+import { siteUrl } from "@/lib/email/send";
 
 /**
- * Cliente Supabase para o SERVIDOR (Server Components, Server Actions, Route
- * Handlers). Lê a sessão dos cookies e opera como usuário autenticado (RLS).
+ * Cliente do SERVIDOR (Server Components, Server Actions, Route Handlers) —
+ * agora sobre o Cloudflare D1 + login próprio (cookie de sessão).
+ * Quem chega aqui já passou pelo proxy.ts (rotas do painel exigem sessão).
  *
  * Next.js 16: `cookies()` é assíncrono — por isso o await.
  */
 export async function createClient() {
   const cookieStore = await cookies();
-
-  return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll();
-      },
-      setAll(cookiesToSet) {
+  const auth = createAuth(
+    {
+      get: (name) => cookieStore.get(name)?.value,
+      set: (name, value, { maxAge }) => {
         try {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options),
-          );
+          cookieStore.set(name, value, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            path: "/",
+            maxAge,
+          });
         } catch {
-          // Chamado a partir de um Server Component (cookies read-only).
-          // O refresh de sessão acontece no proxy.ts (Fase 2), então é seguro ignorar.
+          // Server Component: cookies são read-only. Login/logout acontecem em actions.
         }
       },
     },
-  });
+    () => `${siteUrl()}/auth/confirm?next=/redefinir-senha`,
+  );
+  return { ...createDbClient(), auth };
 }
+
+export { SESSION_COOKIE };
