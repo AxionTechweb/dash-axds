@@ -25,7 +25,8 @@ export async function sendEmail(input: { to: string; subject: string; html: stri
 
 /** Base pública da instância para links de e-mail (nunca dos headers da request). */
 export function siteUrl(): string {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  // SITE_URL é lido em runtime (secret do Worker); NEXT_PUBLIC_* é embutido no build.
+  const configured = (process.env.SITE_URL ?? process.env.NEXT_PUBLIC_SITE_URL)?.trim();
   if (configured) return configured.replace(/\/+$/, "");
   return "http://localhost:3000";
 }

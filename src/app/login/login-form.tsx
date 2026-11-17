@@ -19,6 +19,7 @@ export function LoginForm() {
   // No Worker (OpenNext) o redirect() de dentro da action quebrava depois de
   // gravar o cookie; a navegação pelo navegador é o caminho robusto.
   useEffect(() => {
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- navegação completa de propósito
     if (state.ok) window.location.assign("/dashboard");
   }, [state.ok]);
 

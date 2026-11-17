@@ -17,7 +17,7 @@ const ForgotPasswordSchema = z.object({
  * e mandaria o código de recuperação para outro domínio.
  */
 async function getBaseUrl(): Promise<string> {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  const configured = (process.env.SITE_URL ?? process.env.NEXT_PUBLIC_SITE_URL)?.trim();
   if (configured) return configured.replace(/\/+$/, "");
   // Vercel injeta o domínio de produção do projeto.
   const vercelProd = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
