@@ -23,7 +23,7 @@
 			"binding": "DB",
 			"database_name": "dash-axds",
 			// Preenchido depois do `wrangler d1 create dash-axds` (ver docs/cloudflare.md).
-			"database_id": "00000000-0000-0000-0000-000000000000",
+			"database_id": "619a3528-c657-4780-8648-486538464022",
 			"migrations_dir": "d1/migrations"
 		}
 	],
@@ -42,5 +42,7 @@
 			"0 8 * * *"
 		]
 	},
+	// Sourcemap passa de 60 MB (limite da Cloudflare) e quebra o deploy.
+	"upload_source_maps": false,
 	"observability": { "enabled": true }
 }
