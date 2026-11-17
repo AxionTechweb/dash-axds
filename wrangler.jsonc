@@ -42,6 +42,8 @@
 			"0 8 * * *"
 		]
 	},
+	// Domínio do painel (zona axionmitsc.com.br, mesma conta). Antes era CNAME pra Vercel.
+	"routes": [{ "pattern": "dash.axionmitsc.com.br", "custom_domain": true }],
 	// Sourcemap passa de 60 MB (limite da Cloudflare) e quebra o deploy.
 	"upload_source_maps": false,
 	"observability": { "enabled": true }
