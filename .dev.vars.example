@@ -1,0 +1,10 @@
+# .dev.vars.example — copie para .dev.vars (local) / `wrangler secret put` (produção)
+# Mesmas variáveis do .env.example. NUNCA commitar o .dev.vars.
+# Task 1 (spike): o Worker ainda lê o Supabase.
+NEXTJS_ENV=development
+NEXT_PUBLIC_SUPABASE_URL="https://SEU-PROJETO.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY="sua-anon-ou-publishable-key"
+SUPABASE_SERVICE_ROLE_KEY="sua-service-role-ou-secret-key"
+ENCRYPTION_KEY="troque-por-uma-chave-aleatoria-longa"
+SETUP_TOKEN="troque-por-um-token-aleatorio"
+CRON_SECRET="troque-por-um-segredo-aleatorio"

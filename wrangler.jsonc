@@ -1,0 +1,21 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"main": ".open-next/worker.js",
+	"name": "dash-axds",
+	"compatibility_date": "2026-11-01",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"services": [
+		{
+			// Auto-referência usada pelo OpenNext (o nome tem que ser igual ao do Worker).
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "dash-axds"
+		}
+	],
+	"observability": { "enabled": true }
+	// Task 1 (spike): ainda lê o Supabase pelas vars/secrets.
+	// D1 (binding "DB") entra na Task 2; crons na Task 8.
+}

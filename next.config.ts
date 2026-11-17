@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
 const nextConfig: NextConfig = {
   experimental: {
@@ -19,3 +20,6 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+
+// Dá acesso aos bindings da Cloudflare (getCloudflareContext) no `next dev`.
+initOpenNextCloudflareForDev();
