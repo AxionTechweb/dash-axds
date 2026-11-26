@@ -14,7 +14,6 @@ import {
 import { testAdAccountConnection } from "@/lib/meta/test-connection";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { testGa4Connection } from "@/lib/ga4/client";
-import { testSheetsConnection } from "@/lib/sheets/client";
 import { testMetaWaConnection } from "@/lib/meta-wa/client";
 import { newCredentials } from "@/lib/public-api/auth";
 import { sendTestEvent } from "@/lib/public-api/events";
@@ -555,163 +554,13 @@ export async function deleteVturbPlayer(
   return { ok: "Vídeo removido do monitoramento." };
 }
 
-/* ------------------------------------------------ Google Sheets: destino */
-
-/** Aceita a URL inteira da planilha ou só o ID, e extrai o ID. */
-function extractSpreadsheetId(input: string): string | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-
-  const match = trimmed.match(/\/d\/([a-zA-Z0-9-_]+)/);
-  if (match) return match[1];
-
-  // Sem "/" — assume que já é o ID puro.
-  return /^[a-zA-Z0-9-_]+$/.test(trimmed) ? trimmed : null;
-}
-
-/**
- * Salva (ou remove) a integração com o Google Sheets. Testa a credencial
- * contra a API ANTES de gravar — mesmo raciocínio de saveAdAccount, que
- * valida o token da Meta antes de persistir.
- */
-export async function saveSheetsIntegration(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const ctx = await requireArea();
-  if ("error" in ctx) return { error: ctx.error };
-
-  const rawSpreadsheet = String(formData.get("spreadsheet") ?? "").trim();
-  const serviceAccountJson = String(formData.get("service_account_json") ?? "").trim();
-  const admin = createAdminClient();
-
-  // Os dois campos vazios removem a integração (desconecta).
-  if (!rawSpreadsheet && !serviceAccountJson) {
-    const { error } = await admin
-      .from("google_sheets_integrations")
-      .delete()
-      .eq("area_id", ctx.area.id);
-    if (error) return { error: `Falha ao remover: ${error.message}` };
-
-    await audit(ctx.area.id, ctx.user.email, "config.sheets_disconnect", {});
-    revalidatePath("/integracoes");
-    return { ok: "Google Sheets desconectado." };
-  }
-
-  const spreadsheetId = extractSpreadsheetId(rawSpreadsheet);
-  if (!spreadsheetId) return { error: "Cole a URL da planilha ou o ID dela." };
-
-  if (!serviceAccountJson) {
-    return { error: "Cole o JSON da service account." };
-  }
-
-  try {
-    JSON.parse(serviceAccountJson);
-  } catch {
-    return { error: "JSON inválido — cole o arquivo da chave da service account inteiro." };
-  }
-
-  const test = await testSheetsConnection(spreadsheetId, serviceAccountJson);
-  if (!test.ok) {
-    return {
-      error: `Não foi possível acessar a planilha: ${test.error}. Confirme que ela foi compartilhada com o client_email da service account como Editor.`,
-    };
-  }
-
-  const { error } = await admin.from("google_sheets_integrations").upsert(
-    {
-      area_id: ctx.area.id,
-      spreadsheet_id: spreadsheetId,
-      service_account_json: await encryptSecret(serviceAccountJson),
-      enabled: true,
-    },
-    { onConflict: "area_id" },
-  );
-  if (error) return { error: `Falha ao salvar: ${error.message}` };
-
-  await audit(ctx.area.id, ctx.user.email, "config.sheets_connect", {
-    spreadsheet_id: spreadsheetId,
-  });
-
-  revalidatePath("/integracoes");
-  return { ok: `Conectado a "${test.title}".` };
-}
-
-/**
- * Mesma coisa, pra 2ª planilha (checkpoints diários por campanha,
- * `daily_campaign_sheets`) — pode ser a mesma service account do relatório
- * semanal (só precisa compartilhar essa planilha também com o
- * client_email) ou uma diferente.
- */
-export async function saveDailyCampaignSheetsIntegration(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const ctx = await requireArea();
-  if ("error" in ctx) return { error: ctx.error };
-
-  const rawSpreadsheet = String(formData.get("spreadsheet") ?? "").trim();
-  const serviceAccountJson = String(formData.get("service_account_json") ?? "").trim();
-  const admin = createAdminClient();
-
-  if (!rawSpreadsheet && !serviceAccountJson) {
-    const { error } = await admin
-      .from("daily_campaign_sheets")
-      .delete()
-      .eq("area_id", ctx.area.id);
-    if (error) return { error: `Falha ao remover: ${error.message}` };
-
-    await audit(ctx.area.id, ctx.user.email, "config.daily_sheets_disconnect", {});
-    revalidatePath("/integracoes");
-    return { ok: "Google Sheets (checkpoints diários) desconectado." };
-  }
-
-  const spreadsheetId = extractSpreadsheetId(rawSpreadsheet);
-  if (!spreadsheetId) return { error: "Cole a URL da planilha ou o ID dela." };
-
-  if (!serviceAccountJson) {
-    return { error: "Cole o JSON da service account." };
-  }
-
-  try {
-    JSON.parse(serviceAccountJson);
-  } catch {
-    return { error: "JSON inválido — cole o arquivo da chave da service account inteiro." };
-  }
-
-  const test = await testSheetsConnection(spreadsheetId, serviceAccountJson);
-  if (!test.ok) {
-    return {
-      error: `Não foi possível acessar a planilha: ${test.error}. Confirme que ela foi compartilhada com o client_email da service account como Editor.`,
-    };
-  }
-
-  const { error } = await admin.from("daily_campaign_sheets").upsert(
-    {
-      area_id: ctx.area.id,
-      spreadsheet_id: spreadsheetId,
-      service_account_json: await encryptSecret(serviceAccountJson),
-      enabled: true,
-    },
-    { onConflict: "area_id" },
-  );
-  if (error) return { error: `Falha ao salvar: ${error.message}` };
-
-  await audit(ctx.area.id, ctx.user.email, "config.daily_sheets_connect", {
-    spreadsheet_id: spreadsheetId,
-  });
-
-  revalidatePath("/integracoes");
-  return { ok: `Conectado a "${test.title}".` };
-}
-
 /* -------------------------------------------------------------------- GA4 */
 
 /**
  * Conexão do GA4 (página de destino, painel /ga4) — property ID (só número)
- * + JSON da service account (pode ser a mesma do Sheets, desde que tenha a
- * Analytics Data API ativada e acesso de Leitor à propriedade). Testa antes
- * de salvar, mesmo raciocínio de saveSheetsIntegration.
+ * + JSON da service account (precisa ter a Analytics Data API ativada e
+ * acesso de Leitor à propriedade). Testa antes de salvar, mesmo raciocínio
+ * de saveAdAccount.
  */
 export async function saveGa4Integration(
   _prev: FormState,

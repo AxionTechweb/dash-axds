@@ -94,7 +94,7 @@ export function SettingsForm({
       </div>
 
       {/*
-        Taxas do relatório semanal (Meta + Vturb + checkout, Google Sheets):
+        Taxas do relatório semanal (Meta + Vturb + checkout):
         entram na margem líquida de cada criativo.
       */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

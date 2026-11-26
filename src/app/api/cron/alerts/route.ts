@@ -8,9 +8,8 @@ import { runAlertsForAllAreas } from "@/lib/alerts";
  * anúncio desativada na Meta).
  *
  * Disparado por um agendador EXTERNO a cada ~15min — não pela Vercel Cron
- * nativa (plano Hobby só roda 1x/dia), mesmo esquema de
- * /api/cron/daily-campaigns. Cada checagem já se protege contra spam
- * internamente (alert_state / last_known_status) — pode rodar com
+ * nativa (plano Hobby só roda 1x/dia). Cada checagem já se protege contra
+ * spam internamente (alert_state / last_known_status) — pode rodar com
  * frequência sem se preocupar em repetir aviso.
  *
  * Mesma proteção dos outros crons: Authorization: Bearer $CRON_SECRET, em

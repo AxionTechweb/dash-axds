@@ -17,7 +17,6 @@ import {
 import { getBranding } from "@/lib/branding";
 import { CHECKOUT_PLATFORMS } from "@/lib/checkout/platforms";
 import { DISPATCH_TRIGGERS } from "@/lib/meta-wa/constants";
-import { CHECKPOINT_HOURS } from "@/lib/reports/daily";
 
 export const metadata: Metadata = {
   title: "Documentação",
@@ -43,7 +42,6 @@ const MAX_CAMPAIGN = 500;
 export default async function DocsPage() {
   const branding = await getBranding();
   const name = branding.product_name;
-  const checkpoints = CHECKPOINT_HOURS.map((h) => `${h}h`).join(", ");
 
   return (
     <PublicDoc
@@ -239,13 +237,11 @@ Painel              →  grava o ad_id na venda e cruza com a Meta`}</Pre>
           API key e o número de destino. Não envia nada para clientes.
         </P>
 
-        <H3 id="opcionais">Vturb, Google Sheets e GA4 (opcionais)</H3>
+        <H3 id="opcionais">Vturb e GA4 (opcionais)</H3>
         <Table
           head={["Integração", "O que pede", "Para que serve"]}
           rows={[
             ["Vturb", "API key e os IDs dos players", "Hook, play rate e retenção do pitch no relatório semanal e na página Vturb."],
-            ["Google Sheets — semanal", "URL da planilha e JSON da service account (com acesso de editor)", "Relatório semanal por criativo (ROAS, CAC, margem)."],
-            ["Google Sheets — diário", "URL da planilha (com aba TEMPLATE) e JSON da service account", `Checkpoints intradia por campanha ativa (${checkpoints}, horário de Brasília).`],
             ["GA4", "ID da propriedade e JSON da service account (leitor da propriedade, Analytics Data API ativa)", "Página GA4 no painel."],
           ]}
         />
@@ -398,7 +394,6 @@ Painel              →  grava o ad_id na venda e cruza com a Meta`}</Pre>
             ["Fila de disparos de WhatsApp", "A cada 5 minutos"],
             ["Alertas operacionais", "A cada 15 minutos"],
             ["Regras automáticas", "Periodicamente, sobre os dados de Campanhas"],
-            ["Checkpoints diários na planilha", `${checkpoints} (horário de Brasília)`],
             ["Resumo do dia (push)", "Todo dia às 18h"],
             ["Relatório semanal por criativo", "Segunda-feira de manhã"],
             ["Sincronização do GA4", "Diária"],

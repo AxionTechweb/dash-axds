@@ -38,7 +38,7 @@ export function Ga4Connect({
         <p className="micro-label mb-1.5">Antes de conectar</p>
         <ol className="ml-4 list-decimal space-y-1 text-xs text-muted-foreground">
           <li>
-            Pode ser a <strong>mesma service account</strong> do Google Sheets — só
+            Use uma <strong>service account</strong> do Google Cloud — só
             precisa ativar a <strong>Google Analytics Data API</strong> no projeto do
             Google Cloud dela.
           </li>

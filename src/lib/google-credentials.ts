@@ -1,7 +1,7 @@
 import "server-only";
 
 /**
- * Credencial de Service Account colada no painel (Sheets/GA4).
+ * Credencial de Service Account colada no painel (GA4).
  *
  * O google-auth-library aceita vários tipos de JSON — inclusive
  * "external_account", que manda o servidor LER ARQUIVOS locais ou buscar URLs

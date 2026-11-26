@@ -5,7 +5,6 @@ import { getUsdToBrlRate } from "@/lib/exchange-rate";
 import { withCurrencyTag } from "@/lib/format";
 import { getMetaEntities } from "@/lib/meta/campaigns";
 import { getLastWeekRange } from "@/lib/period";
-import { type CreativeReportRow, writeWeeklyReportToSheet } from "@/lib/sheets/writer";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getVturbByAd } from "@/lib/vturb/metrics";
 
@@ -216,33 +215,16 @@ export async function buildWeeklyReport(
   return { rowsWritten: error ? 0 : rows.length, errors };
 }
 
-const CREATIVE_REPORT_SHEET_COLUMNS =
-  "week_start, week_end, account_label, ad_id, ad_name, campaign_name, status, " +
-  "spend, spend_usd, impressions, clicks, page_views, " +
-  "initiate_checkout, meta_purchases, hook_rate, plays, play_rate, pitch_retention, " +
-  "cta_clicks, vturb_views, vturb_unique_views, vturb_conversions, vturb_revenue, " +
-  "retention_25, retention_50, retention_75, avg_watch_seconds, " +
-  "sales_vd, revenue_vd, sales_upsell, revenue_upsell, sales_downsell, revenue_downsell, " +
-  "sales_total, ticket_medio, revenue_total, net_revenue, refund_value, chargeback_value, " +
-  "canceled_count, unique_buyers, " +
-  "roas, cpa, cac, arpu, rpv, conversion_rate, pv_ic_rate, checkout_rate, " +
-  "net_margin, profit_margin_pct, delta_meta_vs_own";
-
 export type WeeklyReportRunSummary = {
   areaId: string;
   rowsWritten: number;
-  sheetOk: boolean;
-  sheetError?: string;
   errors: string[];
 };
 
 /**
  * Roda o relatório da semana Seg–Dom que acabou de fechar para TODAS as
  * áreas — chamado pelo cron semanal. Cada área é isolada em try/catch: uma
- * falha (ex.: Meta fora do ar numa área) não derruba as demais. A escrita no
- * Sheets é tentada mesmo quando a integração não está configurada — o erro
- * fica registrado em `weekly_report_runs` para dar visibilidade, sem quebrar
- * o cron.
+ * falha (ex.: Meta fora do ar numa área) não derruba as demais.
  */
 export async function runWeeklyReportForAllAreas(): Promise<WeeklyReportRunSummary[]> {
   const admin = createAdminClient();
@@ -264,27 +246,7 @@ export async function runWeeklyReportForAllAreas(): Promise<WeeklyReportRunSumma
         weekEndYmd,
       );
 
-      let sheetOk = false;
-      let sheetError: string | undefined;
-
-      if (built.rowsWritten > 0) {
-        const { data: rows } = await admin
-          .from("creative_reports")
-          .select(CREATIVE_REPORT_SHEET_COLUMNS)
-          .eq("area_id", areaId)
-          .eq("week_start", weekStartYmd);
-
-        const sheetResult = await writeWeeklyReportToSheet(
-          areaId,
-          weekStartYmd,
-          weekEndYmd,
-          (rows ?? []) as unknown as CreativeReportRow[],
-        );
-        sheetOk = sheetResult.ok;
-        if (!sheetResult.ok) sheetError = sheetResult.error;
-      }
-
-      summaries.push({ areaId, rowsWritten: built.rowsWritten, sheetOk, sheetError, errors: built.errors });
+      summaries.push({ areaId, rowsWritten: built.rowsWritten, errors: built.errors });
 
       await admin.from("audit_log").insert({
         area_id: areaId,
@@ -295,8 +257,6 @@ export async function runWeeklyReportForAllAreas(): Promise<WeeklyReportRunSumma
           week_start: weekStartYmd,
           week_end: weekEndYmd,
           rows_written: built.rowsWritten,
-          sheet_ok: sheetOk,
-          sheet_error: sheetError ?? null,
           // rowsWritten=0 pode ser "sem anúncio na semana" OU uma falha no
           // upsert (ex.: overflow numérico) — sem isso aqui, a única forma
           // de saber qual era chamar a rota na mão e ler a resposta.
@@ -307,7 +267,6 @@ export async function runWeeklyReportForAllAreas(): Promise<WeeklyReportRunSumma
       summaries.push({
         areaId,
         rowsWritten: 0,
-        sheetOk: false,
         errors: [err instanceof Error ? err.message : "erro desconhecido"],
       });
     }

@@ -11,7 +11,6 @@ export const CRON_ROUTES: Record<string, string> = {
   "* * * * *": "/api/cron/webhooks",
   "*/5 * * * *": "/api/cron/dispatch",
   "*/15 * * * *": "/api/cron/alerts",
-  "2 * * * *": "/api/cron/daily-campaigns",
   "7 * * * *": "/api/cron/rules",
   "0 21 * * *": "/api/cron/daily-summary",
   "30 3 * * *": "/api/cron/cleanup",

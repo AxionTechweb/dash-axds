@@ -8,9 +8,8 @@ import { runWeeklyReportForAllAreas } from "@/lib/reports/weekly";
  * + checkout), agendado para segunda-feira de manhã (Vercel Cron).
  *
  * Calcula a semana Seg–Dom que acabou de fechar, grava em `creative_reports`
- * e escreve a cópia de leitura no Google Sheets configurado por área. Mesma
- * proteção de /api/cron/rules: Authorization: Bearer $CRON_SECRET, em tempo
- * constante, falha fechada sem o segredo no env.
+ * no banco. Mesma proteção de /api/cron/rules: Authorization: Bearer
+ * $CRON_SECRET, em tempo constante, falha fechada sem o segredo no env.
  */
 
 export const dynamic = "force-dynamic";
@@ -41,7 +40,6 @@ export async function GET(request: Request) {
         ok: true,
         areas: summaries.length,
         rowsWritten: summaries.reduce((sum, s) => sum + s.rowsWritten, 0),
-        sheetsOk: summaries.filter((s) => s.sheetOk).length,
         summaries,
       },
       200,

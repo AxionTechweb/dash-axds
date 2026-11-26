@@ -34,7 +34,7 @@ export type VturbRow = {
   uniqueViews: number;
   /**
    * ATENÇÃO: mantido com esse nome (e sem mudar de valor) porque
-   * `creative_reports.plays`/a planilha semanal já leem este campo — é na
+   * `creative_reports.plays` já lê este campo — é na
    * verdade `total_started_session_uniq` (reproduções ÚNICAS), não o total
    * bruto. `rawPlays`/`uniquePlays` abaixo são os nomes corretos, pra quem
    * consome de novo (tabela por criativo em /vturb).

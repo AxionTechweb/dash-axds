@@ -212,7 +212,7 @@ export default async function PrivacidadePage() {
               "Origem dos dados de compra; elas são controladoras dos dados de pagamento.",
             ],
             [
-              "Google (Sheets e Analytics) e Vturb",
+              "Google Analytics e Vturb",
               "Relatórios com métricas agregadas de campanha e de vídeo — sem dados pessoais de clientes.",
             ],
           ]}

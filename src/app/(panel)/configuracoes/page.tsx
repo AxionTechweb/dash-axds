@@ -152,10 +152,9 @@ export default async function ConfiguracoesPage() {
             </h2>
             <p className="text-sm text-muted-foreground">
               Classifica cada produto vendido como VD, Upsell ou Downsell — usado
-              para quebrar a receita por tier no relatório semanal (Vturb +
-              Google Sheets, em Integrações). Produto não classificado fica em
-              &quot;Outro&quot; e continua entrando no total, só não some
-              separado.
+              para quebrar a receita por tier no relatório semanal. Produto não
+              classificado fica em &quot;Outro&quot; e continua entrando no total,
+              só não some separado.
             </p>
           </div>
 

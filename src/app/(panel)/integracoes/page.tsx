@@ -13,11 +13,9 @@ import { cn } from "@/lib/utils";
 
 import { ApiPublicConnect } from "./api-public-connect";
 import { CheckoutConnect } from "./checkout-connect";
-import { DailySheetsConnect } from "./daily-sheets-connect";
 import { Ga4Connect } from "./ga4-connect";
 import { CopyBox } from "./integration-forms";
 import { MetaConnect, type AccountRow } from "./meta-connect";
-import { SheetsConnect } from "./sheets-connect";
 import { MetaWaConnect } from "./meta-wa-connect";
 import { VturbConnect, type VturbPlayerRow } from "./vturb-connect";
 import { WhatsappConnect } from "./whatsapp-connect";
@@ -54,8 +52,6 @@ export default async function IntegracoesPage() {
     { data: areaRow },
     { data: integrations },
     { data: vturbPlayersData },
-    { data: sheetsRow },
-    { data: dailySheetsRow },
     { data: ga4Row },
     { data: whatsappRow },
     { data: metaWaRow },
@@ -79,16 +75,6 @@ export default async function IntegracoesPage() {
       .select("id, player_id, label")
       .eq("area_id", activeArea.id)
       .order("created_at", { ascending: true }),
-    supabase
-      .from("google_sheets_integrations")
-      .select("spreadsheet_id, service_account_json, template_tab_name, enabled")
-      .eq("area_id", activeArea.id)
-      .maybeSingle(),
-    supabase
-      .from("daily_campaign_sheets")
-      .select("spreadsheet_id, service_account_json, template_tab_name, enabled")
-      .eq("area_id", activeArea.id)
-      .maybeSingle(),
     supabase
       .from("ga4_integrations")
       .select("property_id, service_account_json, enabled")
@@ -127,10 +113,6 @@ export default async function IntegracoesPage() {
     label: row.label as string,
   }));
 
-  const sheetsOn = Boolean(sheetsRow?.service_account_json && sheetsRow?.enabled !== false);
-  const dailySheetsOn = Boolean(
-    dailySheetsRow?.service_account_json && dailySheetsRow?.enabled !== false,
-  );
   const ga4On = Boolean(ga4Row?.service_account_json && ga4Row?.enabled !== false);
   const whatsappOn = Boolean(whatsappRow?.api_key && whatsappRow?.enabled !== false);
   const metaWaOn = Boolean(metaWaRow?.access_token && metaWaRow?.enabled !== false);
@@ -173,18 +155,6 @@ export default async function IntegracoesPage() {
         ? `Vturb conectada · ${vturbPlayers.length} vídeo(s)`
         : "Conectar a Vturb (opcional, pro relatório semanal)",
       done: vturbOn,
-    },
-    {
-      label: sheetsOn
-        ? "Google Sheets conectado · relatório semanal"
-        : "Conectar o Google Sheets (opcional, pro relatório semanal)",
-      done: sheetsOn,
-    },
-    {
-      label: dailySheetsOn
-        ? "Google Sheets conectado · checkpoints diários"
-        : "Conectar o Google Sheets (opcional, pros checkpoints diários)",
-      done: dailySheetsOn,
     },
     {
       label: ga4On
@@ -313,34 +283,7 @@ export default async function IntegracoesPage() {
         <VturbConnect players={vturbPlayers} />
       </Card>
 
-      {/* 5 — Google Sheets (opcional) */}
-      <Card>
-        <CardHeader>
-          <CardLabel>Google Sheets</CardLabel>
-          <span className="micro-label">destino do relatório semanal</span>
-        </CardHeader>
-        <SheetsConnect
-          connected={sheetsOn}
-          spreadsheetId={(sheetsRow?.spreadsheet_id as string) ?? null}
-          templateTabName={(sheetsRow?.template_tab_name as string) ?? "TEMPLATE"}
-        />
-      </Card>
-
-      {/* 6 — Google Sheets: checkpoints diários (opcional) */}
-      <Card>
-        <CardHeader>
-          <CardLabel>Google Sheets — checkpoints diários</CardLabel>
-          <span className="micro-label">campanhas ativas · a cada ~2h</span>
-        </CardHeader>
-        <DailySheetsConnect
-          baseUrl={baseUrl}
-          connected={dailySheetsOn}
-          spreadsheetId={(dailySheetsRow?.spreadsheet_id as string) ?? null}
-          templateTabName={(dailySheetsRow?.template_tab_name as string) ?? "TEMPLATE"}
-        />
-      </Card>
-
-      {/* 7 — GA4 (opcional) */}
+      {/* 5 — GA4 (opcional) */}
       <Card>
         <CardHeader>
           <CardLabel>GA4</CardLabel>
@@ -352,7 +295,7 @@ export default async function IntegracoesPage() {
         />
       </Card>
 
-      {/* 8 — WhatsApp (opcional) */}
+      {/* 6 — WhatsApp (opcional) */}
       <Card>
         <CardHeader>
           <CardLabel>WhatsApp — avisos</CardLabel>
@@ -366,7 +309,7 @@ export default async function IntegracoesPage() {
         />
       </Card>
 
-      {/* 9 — API oficial da Meta / WhatsApp Cloud API (opcional) */}
+      {/* 7 — API oficial da Meta / WhatsApp Cloud API (opcional) */}
       <Card>
         <CardHeader>
           <CardLabel>API oficial do WhatsApp (Meta)</CardLabel>

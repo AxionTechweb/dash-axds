@@ -9,11 +9,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { GA4_API_BASE, GA4_SCOPE } from "./config";
 
 /**
- * Autenticação com o GA4 Data API via Service Account do Google — mesma
- * técnica de src/lib/sheets/client.ts (google.auth.GoogleAuth, já
- * dependência do projeto). Pode ser a MESMA service account do Sheets,
- * desde que tenha a Analytics Data API ativada e acesso de Leitor à
- * propriedade GA4.
+ * Autenticação com o GA4 Data API via Service Account do Google
+ * (google.auth.GoogleAuth, do pacote googleapis). A service account precisa
+ * ter a Analytics Data API ativada e acesso de Leitor à propriedade GA4.
  */
 
 export type Ga4Integration = {
