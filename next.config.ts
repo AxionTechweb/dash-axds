@@ -39,4 +39,7 @@ const nextConfig: NextConfig = {
 export default nextConfig;
 
 // Dá acesso aos bindings da Cloudflare (getCloudflareContext) no `next dev`.
-initOpenNextCloudflareForDev();
+// Só no dev: no build ele sobe o workerd à toa (e o workerd quebra em alguns Windows).
+if (process.env.NODE_ENV === "development") {
+  initOpenNextCloudflareForDev();
+}

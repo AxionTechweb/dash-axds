@@ -8,6 +8,7 @@ import {
   mapStatus,
   type CheckoutPlatform,
 } from "@/lib/checkout/platforms";
+import { enqueueEmail, processEmailQueue } from "@/lib/email/automation";
 import { suggestEmailTypoFix } from "@/lib/email-typo";
 import type { DispatchTrigger } from "@/lib/meta-wa/constants";
 import { enqueueDispatch, processDispatchQueue } from "@/lib/meta-wa/dispatch";
@@ -186,6 +187,26 @@ function purchaseTrigger(status: string): DispatchTrigger | null {
   if (status === "approved") return "approved";
   if (status === "waiting_payment" || status === "pending") return "waiting_payment";
   if (status === "abandoned") return "abandoned";
+  return null;
+}
+
+/**
+ * Nome do comprador no próprio payload: irmão do campo de e-mail da
+ * plataforma (customer.email → customer.name / full_name / nome…).
+ */
+function payloadName(source: unknown, emailPaths: string[]): string | null {
+  const keys = ["name", "full_name", "fullName", "nome", "Name", "FullName", "nome_completo"];
+  for (const path of emailPaths) {
+    const parent = path.includes(".") ? path.slice(0, path.lastIndexOf(".")) : "";
+    const prefix = parent ? `${parent}.` : "";
+    const direct = firstString(source, keys.map((k) => prefix + k));
+    if (direct) return direct;
+    const first = firstString(source, [`${prefix}first_name`, `${prefix}firstName`]);
+    if (first) {
+      const last = firstString(source, [`${prefix}last_name`, `${prefix}lastName`]);
+      return last ? `${first} ${last}` : first;
+    }
+  }
   return null;
 }
 
@@ -432,9 +453,18 @@ export async function POST(
   // Disparo pela API oficial da Meta: só ENFILEIRA (regra desligada = no-op);
   // o envio roda depois da resposta e nunca afeta o retorno ao checkout.
   const trigger = purchaseTrigger(status);
+  const buyerName = payloadName(source, paths.email);
   if (trigger) {
     after(async () => {
-      const nome = await visitorName(area.areaId, rawUserId, email, telefone);
+      const nome = buyerName ?? (await visitorName(area.areaId, rawUserId, email, telefone));
+      const queued = await enqueueEmail({
+        areaId: area.areaId,
+        trigger,
+        sourceRef: transactionId,
+        email,
+        context: { nome, email, telefone, produto, valor, moeda },
+      });
+      if (queued) await processEmailQueue({ areaId: area.areaId, limit: 10, maxMs: 15_000 });
       const ready = await enqueueDispatch({
         areaId: area.areaId,
         trigger,

@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 import { json } from "@/lib/capture";
+import { processEmailQueue } from "@/lib/email/automation";
 import { processDispatchQueue } from "@/lib/meta-wa/dispatch";
 
 /**
@@ -37,8 +38,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    const summary = await processDispatchQueue({ limit: 100, maxMs: 50_000 });
-    return json({ ok: true, ...summary }, 200);
+    const summary = await processDispatchQueue({ limit: 100, maxMs: 35_000 });
+    const email = await processEmailQueue({ limit: 100, maxMs: 15_000 });
+    return json({ ok: true, ...summary, email }, 200);
   } catch (err) {
     console.error("[cron/dispatch] falha na execução:", err);
     return json({ error: "execution_failed" }, 500);

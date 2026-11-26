@@ -813,6 +813,66 @@ export const SCHEMA: Record<string, TableMeta> = {
       "telefone"
     ]
   },
+  "email_rules": {
+    "columns": [
+      "id",
+      "area_id",
+      "trigger",
+      "subject",
+      "body",
+      "button_label",
+      "button_url",
+      "from_name",
+      "reply_to",
+      "delay_minutes",
+      "enabled",
+      "created_at",
+      "updated_at"
+    ],
+    "bool": [
+      "enabled"
+    ],
+    "json": [],
+    "ts": [
+      "created_at",
+      "updated_at"
+    ],
+    "pk": [
+      "id"
+    ]
+  },
+  "email_log": {
+    "columns": [
+      "id",
+      "area_id",
+      "rule_id",
+      "trigger",
+      "source_ref",
+      "email",
+      "context",
+      "subject",
+      "status",
+      "error",
+      "provider_id",
+      "scheduled_at",
+      "sent_at",
+      "claimed_at",
+      "created_at"
+    ],
+    "bool": [],
+    "json": [
+      "context"
+    ],
+    "ts": [
+      "scheduled_at",
+      "sent_at",
+      "claimed_at",
+      "created_at"
+    ],
+    "pk": [
+      "id"
+    ]
+  },
   "api_credentials": {
     "columns": [
       "area_id",

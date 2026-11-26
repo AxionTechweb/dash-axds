@@ -504,6 +504,45 @@ create table wa_optouts (
   primary key (area_id, telefone)
 );
 
+create table email_rules (
+  id text primary key default {UUID},
+  area_id text not null references areas(id) on delete cascade,
+  trigger text not null check (trigger in ('approved','waiting_payment','abandoned','lead')),
+  subject text not null,
+  body text not null,
+  button_label text,
+  button_url text,
+  from_name text,
+  reply_to text,
+  delay_minutes integer not null default 0 check (delay_minutes >= 0 and delay_minutes <= 10080),
+  enabled integer /*bool*/ not null default 0,
+  created_at text /*ts*/ not null default {NOW},
+  updated_at text /*ts*/ not null default {NOW},
+  unique (area_id, trigger)
+);
+
+create table email_log (
+  id text primary key default {UUID},
+  area_id text not null references areas(id) on delete cascade,
+  rule_id text references email_rules(id) on delete set null,
+  trigger text not null check (trigger in ('approved','waiting_payment','abandoned','lead','test')),
+  source_ref text,
+  email text not null,
+  context text /*json*/ not null default '{}',
+  subject text,
+  status text not null default 'queued' check (status in ('queued','sending','sent','failed','skipped')),
+  error text,
+  provider_id text,
+  scheduled_at text /*ts*/ not null default {NOW},
+  sent_at text /*ts*/,
+  claimed_at text /*ts*/,
+  created_at text /*ts*/ not null default {NOW}
+);
+create unique index email_log_rule_source_uidx on email_log (rule_id, source_ref)
+  where rule_id is not null and source_ref is not null;
+create index email_log_queue_idx on email_log (status, scheduled_at);
+create index email_log_area_created_idx on email_log (area_id, created_at);
+
 create table api_credentials (
   area_id text primary key references areas(id) on delete cascade,
   api_key text not null unique,
